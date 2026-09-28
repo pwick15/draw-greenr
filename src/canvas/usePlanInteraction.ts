@@ -25,6 +25,10 @@ import { bandIsInteractive, useEditorStore } from '@/state/editor'
 const PICK_TOLERANCE_PX = 3
 const SNAP_TOLERANCE_PX = 8
 const DRAG_THRESHOLD_PX = 3
+/** Shortest plot edge worth creating, in screen pixels. */
+const MIN_VERTEX_SPACING_PX = 6
+/** How far a double-click's second click may stray and still mean "finish". */
+const DOUBLE_CLICK_SLOP_PX = 6
 
 export type Gesture =
   | { kind: 'none' }
@@ -168,29 +172,38 @@ export function usePlanInteraction(stageRef: React.RefObject<Konva.Stage | null>
     useEditorStore.getState().clearPlot()
   }, [])
 
-  const addPlotVertex = useCallback(
-    (raw: Vec2, angleLock: boolean) => {
+  const plotSnapContext = useCallback(
+    (angleLock: boolean) => {
       const editor = useEditorStore.getState()
       const { doc } = useDocStore.getState()
-      const snapped = snapPlotPoint(raw, {
+      const perPixel = worldPerPixel()
+      return {
         surfaces: doc.surfaces,
         draft: editor.plotDraft,
         gridSize: doc.settings.gridSize,
         useGrid: editor.snapToGrid,
         useAngle: angleLock || editor.angleSnap,
-        tolerance: SNAP_TOLERANCE_PX * worldPerPixel(),
-      })
+        tolerance: SNAP_TOLERANCE_PX * perPixel,
+        minSpacing: MIN_VERTEX_SPACING_PX * perPixel,
+      }
+    },
+    [],
+  )
+
+  const addPlotVertex = useCallback(
+    (raw: Vec2, angleLock: boolean) => {
+      const editor = useEditorStore.getState()
+      const snapped = snapPlotPoint(raw, plotSnapContext(angleLock))
       if (snapped.closing) {
         commitPlot()
         return
       }
-      // Reject a duplicate of the previous vertex — it produces a zero-length
-      // edge that polyclip will choke on.
-      const previous = editor.plotDraft[editor.plotDraft.length - 1]
-      if (previous && dist(previous, snapped.point) < 1e-6) return
+      // Drops the second half of a double-click and any hand stutter, which
+      // would otherwise leave a millimetre-long edge for polyclip to trip on.
+      if (snapped.degenerate) return
       editor.addPlotPoint(snapped.point)
     },
-    [commitPlot],
+    [commitPlot, plotSnapContext],
   )
 
   // --- gesture starts ------------------------------------------------------
@@ -331,19 +344,19 @@ export function usePlanInteraction(stageRef: React.RefObject<Konva.Stage | null>
       switch (current.kind) {
         case 'none': {
           if (editor.tool === 'plot') {
-            const { doc } = useDocStore.getState()
-            const snapped = snapPlotPoint(world, {
-              surfaces: doc.surfaces,
-              draft: editor.plotDraft,
-              gridSize: doc.settings.gridSize,
-              useGrid: editor.snapToGrid,
-              useAngle: native.shiftKey || editor.angleSnap,
-              tolerance: SNAP_TOLERANCE_PX * worldPerPixel(),
-            })
-            editor.setPlotCursor(snapped.point)
+            editor.setPlotCursor(snapPlotPoint(world, plotSnapContext(native.shiftKey)).point)
             return
           }
-          if (editor.tool === 'select' && !editor.placingAssetId) {
+          if (editor.placingAssetId) {
+            // Snap the preview exactly the way the drop itself will, so what
+            // you see is where it lands.
+            const { doc } = useDocStore.getState()
+            editor.setPlacementPoint(
+              editor.snapToGrid ? snapPointToGrid(world, doc.settings.gridSize) : world,
+            )
+            return
+          }
+          if (editor.tool === 'select') {
             const { doc } = useDocStore.getState()
             const hit = resolvePick(doc, getAssets(), world, null, pickOptions(), false)
             editor.setHover(hit.ref)
@@ -500,7 +513,7 @@ export function usePlanInteraction(stageRef: React.RefObject<Konva.Stage | null>
           return
       }
     },
-    [pickOptions, pointerWorld, stageRef],
+    [pickOptions, plotSnapContext, pointerWorld, stageRef],
   )
 
   const onPointerUp = useCallback(() => {
@@ -571,12 +584,21 @@ export function usePlanInteraction(stageRef: React.RefObject<Konva.Stage | null>
   const onDoubleClick = useCallback(
     (event: KonvaEventObject<MouseEvent>) => {
       const editor = useEditorStore.getState()
-      if (editor.tool === 'plot' && editor.plotDraft.length >= 3) {
-        event.evt.preventDefault()
-        commitPlot()
-      }
+      if (editor.tool !== 'plot' || editor.plotDraft.length < 3) return
+
+      // A double-click only finishes the outline when its second click landed
+      // on the vertex the first one placed. Firing on *any* double-click meant
+      // that placing two vertices quickly — which the browser is happy to
+      // report as a dblclick — silently committed the shape.
+      const world = pointerWorld()
+      const last = editor.plotDraft[editor.plotDraft.length - 1]
+      if (!world || !last) return
+      if (dist(world, last) > DOUBLE_CLICK_SLOP_PX * worldPerPixel()) return
+
+      event.evt.preventDefault()
+      commitPlot()
     },
-    [commitPlot],
+    [commitPlot, pointerWorld],
   )
 
   // Keep the asset store warm so picks have masks available.

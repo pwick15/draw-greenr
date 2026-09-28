@@ -128,6 +128,21 @@ export interface PlotSnapContext {
   useAngle: boolean
   /** Tolerance in world metres, derived from a screen-pixel budget. */
   tolerance: number
+  /**
+   * Shortest edge worth creating, in world metres. A click this close to the
+   * previous vertex is a stutter or the second half of a double-click, never a
+   * deliberate two-centimetre edge.
+   */
+  minSpacing: number
+}
+
+export interface PlotSnapResult {
+  point: Vec2
+  /** The point landed on the first vertex: finish the outline. */
+  closing: boolean
+  /** Too close to the previous vertex to be a real edge — discard it. */
+  degenerate: boolean
+  kind: 'close' | 'vertex' | 'grid' | 'angle' | 'free'
 }
 
 /**
@@ -135,18 +150,27 @@ export interface PlotSnapContext {
  * then an existing vertex (so adjoining plots share corners exactly and the
  * boolean op produces a clean union), then the angle constraint, then grid.
  */
-export function snapPlotPoint(raw: Vec2, ctx: PlotSnapContext): { point: Vec2; closing: boolean; kind: string } {
+export function snapPlotPoint(raw: Vec2, ctx: PlotSnapContext): PlotSnapResult {
   const first = ctx.draft[0]
   if (first && ctx.draft.length >= 3 && dist(raw, first) <= ctx.tolerance) {
-    return { point: first, closing: true, kind: 'close' }
+    return { point: first, closing: true, degenerate: false, kind: 'close' }
   }
 
   const vertex = nearestSurfaceVertex(ctx.surfaces, raw, ctx.tolerance)
-  if (vertex) return { point: vertex, closing: false, kind: 'vertex' }
-
   const previous = ctx.draft[ctx.draft.length - 1]
-  let point = raw
-  if (ctx.useAngle && previous) point = constrainAngle(previous, point, 15)
-  if (ctx.useGrid) point = snapPointToGrid(point, ctx.gridSize)
-  return { point, closing: false, kind: ctx.useGrid ? 'grid' : ctx.useAngle ? 'angle' : 'free' }
+
+  let point: Vec2
+  let kind: PlotSnapResult['kind']
+  if (vertex) {
+    point = vertex
+    kind = 'vertex'
+  } else {
+    point = raw
+    if (ctx.useAngle && previous) point = constrainAngle(previous, point, 15)
+    if (ctx.useGrid) point = snapPointToGrid(point, ctx.gridSize)
+    kind = ctx.useGrid ? 'grid' : ctx.useAngle ? 'angle' : 'free'
+  }
+
+  const degenerate = previous !== undefined && dist(previous, point) < ctx.minSpacing
+  return { point, closing: false, degenerate, kind }
 }

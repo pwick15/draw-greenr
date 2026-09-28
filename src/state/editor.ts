@@ -29,6 +29,13 @@ interface EditorState {
 
   /** Asset queued for placement; the next canvas click drops it. */
   placingAssetId: string | null
+  /**
+   * Cursor position in world metres, used to draw the translucent preview of
+   * the asset about to be placed. Tracked *only* while something is queued for
+   * placement — updating it on every pointer move would re-render the overlay
+   * continuously for no reason.
+   */
+  placementPoint: Vec2 | null
 
   plotMaterialId: string
   plotMode: PaintMode
@@ -71,6 +78,7 @@ interface EditorState {
   setPick: (cycle: PickCycleState | null, status: { depth: number; total: number } | null) => void
 
   setPlacing: (assetId: string | null) => void
+  setPlacementPoint: (point: Vec2 | null) => void
 
   setPlotMaterial: (id: string) => void
   setPlotMode: (mode: PaintMode) => void
@@ -115,6 +123,7 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
   pickStatus: null,
 
   placingAssetId: null,
+  placementPoint: null,
 
   plotMaterialId: 'lawn',
   plotMode: 'add',
@@ -190,7 +199,18 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
   },
 
   setPlacing(assetId) {
-    set({ placingAssetId: assetId, tool: 'select' })
+    set({
+      placingAssetId: assetId,
+      tool: 'select',
+      placementPoint: assetId ? get().placementPoint : null,
+    })
+  },
+
+  setPlacementPoint(point) {
+    const current = get().placementPoint
+    if (current === point) return
+    if (current && point && current.x === point.x && current.y === point.y) return
+    set({ placementPoint: point })
   },
 
   setPlotMaterial(id) {

@@ -1,7 +1,8 @@
 import type { KonvaEventObject } from 'konva/lib/Node'
-import { Circle, Group, Label, Layer, Line, Rect, Tag, Text } from 'react-konva'
+import { Circle, Group, Image as KonvaImage, Label, Layer, Line, Rect, Tag, Text } from 'react-konva'
 
 import { dist, objectBounds, polyArea } from '@/core/geometry'
+import { useLoadedImage } from '@/core/imageCache'
 import type { Guide } from '@/core/snapping'
 import { surfaceVertices, type VertexRef } from '@/core/surfaces'
 import {
@@ -12,7 +13,15 @@ import {
   selectionBounds,
   type HandleId,
 } from '@/core/transform'
-import type { GardenDoc, GardenObject, Rect as WorldRect, SelectionRef, Surface, Vec2 } from '@/core/types'
+import type {
+  AssetDef,
+  GardenDoc,
+  GardenObject,
+  Rect as WorldRect,
+  SelectionRef,
+  Surface,
+  Vec2,
+} from '@/core/types'
 import { formatArea, formatDistance } from '@/core/viewport'
 import type { MeasureState } from '@/state/editor'
 
@@ -32,6 +41,8 @@ interface OverlayLayerProps {
   plotDraft: Vec2[]
   plotCursor: Vec2 | null
   plotActive: boolean
+  /** Asset queued for placement, and where it would land. */
+  placement: { asset: AssetDef; point: Vec2 } | null
   measure: MeasureState | null
   editingSurfaceId: string | null
   gestureKind: string
@@ -50,6 +61,7 @@ export function OverlayLayer({
   plotDraft,
   plotCursor,
   plotActive,
+  placement,
   measure,
   editingSurfaceId,
   gestureKind,
@@ -227,6 +239,8 @@ export function OverlayLayer({
       )}
 
       {plotActive && <PlotPreview px={px} draft={plotDraft} cursor={plotCursor} />}
+
+      {placement && <PlacementPreview px={px} asset={placement.asset} at={placement.point} />}
 
       {measure && <MeasureOverlay px={px} measure={measure} />}
     </Layer>
@@ -428,6 +442,57 @@ function PlotPreview({ px, draft, cursor }: PlotPreviewProps) {
           perfectDrawEnabled={false}
         />
       ))}
+    </Group>
+  )
+}
+
+/**
+ * Translucent preview of the asset about to be placed, drawn at its true size
+ * at the point it would land. Answers both "which one did I pick" and "how big
+ * is that actually" before committing to a click.
+ */
+function PlacementPreview({ px, asset, at }: { px: number; asset: AssetDef; at: Vec2 }) {
+  // Not `getImage`: the asset being previewed is by definition not in the
+  // document yet, so nothing has requested its artwork. This hook starts the
+  // load and re-renders once it lands.
+  const image = useLoadedImage(asset.src)?.image
+  const { w, h } = asset.defaultSize
+
+  return (
+    <Group listening={false}>
+      {image ? (
+        <KonvaImage
+          image={image}
+          x={at.x}
+          y={at.y}
+          width={w}
+          height={h}
+          offsetX={w / 2}
+          offsetY={h / 2}
+          opacity={0.6}
+          perfectDrawEnabled={false}
+        />
+      ) : null}
+      <Rect
+        x={at.x}
+        y={at.y}
+        width={w}
+        height={h}
+        offsetX={w / 2}
+        offsetY={h / 2}
+        stroke={ACCENT}
+        strokeWidth={1.25 * px}
+        dash={[5 * px, 4 * px]}
+        perfectDrawEnabled={false}
+      />
+      <Circle x={at.x} y={at.y} radius={2.5 * px} fill={ACCENT} perfectDrawEnabled={false} />
+      <ReadoutLabel
+        px={px}
+        x={at.x}
+        y={at.y + h / 2 + 11 * px}
+        text={`${formatDistance(w)} × ${formatDistance(h)}`}
+        subtle
+      />
     </Group>
   )
 }

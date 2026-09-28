@@ -14,6 +14,7 @@ import {
 import { useDocStore } from '@/state/document'
 import { useEditorStore } from '@/state/editor'
 
+import { ArrangePanel } from './ArrangePanel'
 import {
   BringForwardIcon,
   FlipXIcon,
@@ -276,6 +277,8 @@ export function Inspector() {
           </ToolButton>
         </div>
       </div>
+
+      {multiple && <ArrangePanel objects={objects} />}
     </Panel>
   )
 }

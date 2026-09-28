@@ -211,6 +211,80 @@ export const SaveIcon = (p: IconProps) => (
   </Icon>
 )
 
+// --- align and distribute --------------------------------------------------
+// The solid line is the edge or centreline being aligned to; the bars are the
+// objects moving onto it.
+
+export const AlignLeftIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M4 3v18" />
+    <rect x="7" y="6" width="13" height="4" rx="1" />
+    <rect x="7" y="14" width="8" height="4" rx="1" />
+  </Icon>
+)
+
+export const AlignCentreXIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M12 3v18" />
+    <rect x="4" y="6" width="16" height="4" rx="1" />
+    <rect x="8" y="14" width="8" height="4" rx="1" />
+  </Icon>
+)
+
+export const AlignRightIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M20 3v18" />
+    <rect x="4" y="6" width="13" height="4" rx="1" />
+    <rect x="9" y="14" width="8" height="4" rx="1" />
+  </Icon>
+)
+
+export const AlignTopIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M3 4h18" />
+    <rect x="6" y="7" width="4" height="13" rx="1" />
+    <rect x="14" y="7" width="4" height="8" rx="1" />
+  </Icon>
+)
+
+export const AlignMiddleYIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M3 12h18" />
+    <rect x="6" y="4" width="4" height="16" rx="1" />
+    <rect x="14" y="8" width="4" height="8" rx="1" />
+  </Icon>
+)
+
+export const AlignBottomIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M3 20h18" />
+    <rect x="6" y="4" width="4" height="13" rx="1" />
+    <rect x="14" y="9" width="4" height="8" rx="1" />
+  </Icon>
+)
+
+export const DistributeXIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M3 3v18M21 3v18" />
+    <rect x="10" y="7" width="4" height="10" rx="1" />
+  </Icon>
+)
+
+export const DistributeYIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M3 3h18M3 21h18" />
+    <rect x="7" y="10" width="10" height="4" rx="1" />
+  </Icon>
+)
+
+export const SpacingIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="3" y="7" width="5" height="10" rx="1" />
+    <rect x="16" y="7" width="5" height="10" rx="1" />
+    <path d="M10 12h4M11 10l-1.5 2 1.5 2M13 10l1.5 2-1.5 2" />
+  </Icon>
+)
+
 export const ImageIcon = (p: IconProps) => (
   <Icon {...p}>
     <rect x="3" y="4" width="18" height="16" rx="2" />

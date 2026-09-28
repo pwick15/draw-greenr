@@ -4,7 +4,9 @@ import { useCallback, useEffect, useState } from 'react'
 import { PlanCanvas } from '@/canvas/PlanCanvas'
 import { useAssetStore } from '@/state/assets'
 import { useEditorStore } from '@/state/editor'
-import { restoreLastDoc, useAutosave } from '@/state/persistence'
+import { restoreLastDoc, saveDocNow, useAutosave } from '@/state/persistence'
+import { usePlansStore } from '@/state/plans'
+import { requestPersistentStorage } from '@/state/storage'
 import { AssetPanel } from '@/ui/AssetPanel'
 import { ImportAssetDialog } from '@/ui/ImportAssetDialog'
 import { Inspector } from '@/ui/Inspector'
@@ -25,8 +27,15 @@ export default function App() {
 
   useEffect(() => {
     void (async () => {
+      // Ask before writing anything: plans and imported artwork are the only
+      // copy that exists, so getting out of the evictable bucket matters.
+      void requestPersistentStorage()
       await useAssetStore.getState().load()
-      await restoreLastDoc()
+      const had = await restoreLastDoc()
+      // A first-run plan exists only in memory until something writes it, so
+      // it would be missing from the plan list until the first edit.
+      if (!had) await saveDocNow()
+      await usePlansStore.getState().refresh()
       setRestored(true)
     })()
   }, [])

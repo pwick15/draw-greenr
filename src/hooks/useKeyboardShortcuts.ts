@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 
+import { copySelection, cutSelection, pasteClipboard } from '@/state/clipboard'
 import { useDocStore } from '@/state/document'
 import { useEditorStore } from '@/state/editor'
 import {
@@ -71,6 +72,18 @@ export function useKeyboardShortcuts(onCommitPlot: () => void, onCancelPlot: () 
           case 'd':
             event.preventDefault()
             duplicateSelection()
+            return
+          case 'c':
+            event.preventDefault()
+            copySelection()
+            return
+          case 'x':
+            event.preventDefault()
+            cutSelection()
+            return
+          case 'v':
+            event.preventDefault()
+            pasteClipboard()
             return
           case 'l':
             event.preventDefault()

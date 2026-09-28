@@ -1,6 +1,7 @@
 import clsx from 'clsx'
 import { useMemo, useState } from 'react'
 
+import { loadImage } from '@/core/imageCache'
 import type { AssetDef } from '@/core/types'
 import { formatDistance } from '@/core/viewport'
 import { useAssetStore } from '@/state/assets'
@@ -190,6 +191,10 @@ export function AssetTile({ asset }: { asset: AssetDef }) {
         e.dataTransfer.effectAllowed = 'copy'
       }}
       onClick={() => setPlacing(placing ? null : asset.id)}
+      // Decode on hover so the placement preview is there the instant it is
+      // clicked. This also builds the alpha mask, which picking wants as soon
+      // as the object lands.
+      onPointerEnter={() => void loadImage(asset.src)}
       title={`${asset.name} — ${formatDistance(asset.defaultSize.w)} × ${formatDistance(asset.defaultSize.h)}`}
       className={clsx(
         'group flex flex-col items-center gap-1 rounded-lg border p-1.5 transition',

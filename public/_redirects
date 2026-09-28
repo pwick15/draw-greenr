@@ -1,0 +1,3 @@
+# Single-page app: serve index.html for any path the build did not emit,
+# so a stray URL or a refresh lands in the app rather than on a 404.
+/*  /index.html  200

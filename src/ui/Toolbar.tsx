@@ -26,6 +26,7 @@ import {
   UndoIcon,
   UploadIcon,
 } from './icons'
+import { PlansMenu } from './PlansMenu'
 import { Button, ToolButton } from './primitives'
 
 const TOOLS = [
@@ -87,8 +88,9 @@ export function Toolbar() {
             })
           }}
           aria-label="Plan name"
-          className="w-44 rounded-md border border-transparent px-1.5 py-1 text-sm font-medium text-stone-800 outline-none transition hover:border-stone-200 focus:border-emerald-500 focus:bg-white"
+          className="w-36 rounded-md border border-transparent px-1.5 py-1 text-sm font-medium text-stone-800 outline-none transition hover:border-stone-200 focus:border-emerald-500 focus:bg-white"
         />
+        <PlansMenu />
       </div>
 
       <div className="mx-1 h-7 w-px bg-stone-200" />

@@ -133,6 +133,14 @@ export function PlanCanvas({ onFileDropped }: PlanCanvasProps) {
   )
 
   const placingAssetId = useEditorStore((s) => s.placingAssetId)
+  const placementPoint = useEditorStore((s) => s.placementPoint)
+
+  const placement = useMemo(() => {
+    if (!placingAssetId || !placementPoint) return null
+    const asset = assets.get(placingAssetId)
+    return asset ? { asset, point: placementPoint } : null
+  }, [placingAssetId, placementPoint, assets])
+
   const cursor =
     tool === 'plot' || tool === 'measure'
       ? 'crosshair'
@@ -164,7 +172,14 @@ export function PlanCanvas({ onFileDropped }: PlanCanvasProps) {
         onPointerDown={interaction.onPointerDown}
         onPointerMove={interaction.onPointerMove}
         onPointerUp={interaction.onPointerUp}
-        onPointerLeave={interaction.onPointerUp}
+        onPointerLeave={(e) => {
+          interaction.onPointerUp(e)
+          // Drop the preview and hover cue rather than leaving them stranded
+          // at the edge where the pointer left.
+          const state = useEditorStore.getState()
+          state.setPlacementPoint(null)
+          state.setHover(null)
+        }}
         onWheel={interaction.onWheel}
         onDblClick={interaction.onDoubleClick}
         onContextMenu={(e) => e.evt.preventDefault()}
@@ -188,6 +203,7 @@ export function PlanCanvas({ onFileDropped }: PlanCanvasProps) {
           plotDraft={plotDraft}
           plotCursor={plotCursor}
           plotActive={tool === 'plot'}
+          placement={placement}
           measure={measure}
           editingSurfaceId={editingSurfaceId}
           gestureKind={interaction.gestureKind}

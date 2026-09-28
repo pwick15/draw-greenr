@@ -1,5 +1,15 @@
+import {
+  ALIGN_MODES,
+  alignObjects,
+  distributeObjects,
+  spaceObjects,
+  type AlignMode,
+  type Axis,
+  type DistributeMode,
+} from '@/core/arrange'
 import { objectBounds, unionRects } from '@/core/geometry'
 import { eraseFromAll } from '@/core/surfaces'
+import { selectionBounds } from '@/core/transform'
 import type { BandId, GardenObject, Rect, SelectionRef, Vec2 } from '@/core/types'
 import { fitRect } from '@/core/viewport'
 
@@ -47,22 +57,30 @@ export function deleteSelection(): void {
   editor().clearSelection()
 }
 
-/** Offset a duplicate by a visible but small amount: a quarter of a metre. */
-const DUPLICATE_OFFSET = 0.25
-
+/**
+ * Duplicate flush to the right of the original, matching paste.
+ *
+ * "Duplicate" and "copy then paste" mean the same thing to almost everyone, so
+ * they place identically — and butting copies together is what actually gets
+ * used here, laying out a run of paving or a row of shrubs.
+ */
 export function duplicateSelection(): void {
   const ids = selectedObjectIds()
   if (ids.length === 0) return
+  const objects = ids.map((id) => doc().doc.objects[id]).filter(Boolean)
+  const bounds = selectionBounds(objects)
+  const dx = bounds?.w ?? 0
+
   const created: SelectionRef[] = []
-  doc().apply('Duplicate', (draft) => {
+  doc().apply(ids.length > 1 ? `Duplicate ${ids.length} items` : 'Duplicate', (draft) => {
     for (const id of ids) {
       const source = draft.objects[id]
       if (!source) continue
       const copy: GardenObject = {
         ...source,
         id: newId('obj'),
-        x: source.x + DUPLICATE_OFFSET,
-        y: source.y + DUPLICATE_OFFSET,
+        x: source.x + dx,
+        y: source.y,
         order: topOfBand(draft, source.band),
       }
       draft.objects[copy.id] = copy
@@ -70,6 +88,41 @@ export function duplicateSelection(): void {
     }
   })
   if (created.length) editor().select(created)
+}
+
+// ---------------------------------------------------------------------------
+// Arrangement
+// ---------------------------------------------------------------------------
+
+function applyPlacements(label: string, placements: Map<string, Vec2>): void {
+  if (placements.size === 0) return
+  doc().apply(label, (draft) => {
+    for (const [id, point] of placements) {
+      const object = draft.objects[id]
+      if (!object || object.locked) continue
+      object.x = point.x
+      object.y = point.y
+    }
+  })
+}
+
+export function alignSelection(mode: AlignMode): void {
+  const objects = selectedObjectIds().map((id) => doc().doc.objects[id]).filter(Boolean)
+  const label = ALIGN_MODES.find((m) => m.mode === mode)?.label ?? 'Align'
+  applyPlacements(label, alignObjects(objects, mode))
+}
+
+export function distributeSelection(axis: Axis, mode: DistributeMode = 'gaps'): void {
+  const objects = selectedObjectIds().map((id) => doc().doc.objects[id]).filter(Boolean)
+  applyPlacements(
+    axis === 'x' ? 'Distribute horizontally' : 'Distribute vertically',
+    distributeObjects(objects, axis, mode),
+  )
+}
+
+export function spaceSelection(axis: Axis, gap: number): void {
+  const objects = selectedObjectIds().map((id) => doc().doc.objects[id]).filter(Boolean)
+  applyPlacements('Set spacing', spaceObjects(objects, axis, gap))
 }
 
 export function nudgeSelection(dx: number, dy: number): void {

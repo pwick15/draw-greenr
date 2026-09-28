@@ -53,6 +53,9 @@ interface GreenrDB extends DBSchema {
   meta: { key: string; value: unknown }
 }
 
+// Storage identity, not a display name. The app is called Draw Greenr, but
+// renaming this would orphan every plan and custom asset already saved in a
+// browser — IndexedDB has no rename, it would simply open an empty database.
 const DB_NAME = 'greenr'
 const DB_VERSION = 1
 

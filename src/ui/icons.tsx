@@ -285,6 +285,13 @@ export const SpacingIcon = (p: IconProps) => (
   </Icon>
 )
 
+export const CubeIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="m12 2 9 5v10l-9 5-9-5V7Z" />
+    <path d="m3 7 9 5 9-5M12 12v10" />
+  </Icon>
+)
+
 export const ImageIcon = (p: IconProps) => (
   <Icon {...p}>
     <rect x="3" y="4" width="18" height="16" rx="2" />

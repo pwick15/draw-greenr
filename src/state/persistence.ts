@@ -13,6 +13,10 @@ import { getMeta, putDoc, setMeta, getDoc } from './db'
 import { useDocStore, createEmptyDoc } from './document'
 import { useEditorStore } from './editor'
 
+// On-disk identifiers, deliberately unchanged by the rename to Draw Greenr:
+// the format string is written inside every saved file and the extension is on
+// every file anyone has already exported. Changing either makes old plans
+// unopenable for no benefit.
 export const DOC_FORMAT = 'greenr-garden'
 export const DOC_VERSION = 1
 export const DOC_EXTENSION = 'greenr'

@@ -1,4 +1,4 @@
-# Greenr
+# Draw Greenr
 
 A top-down garden and landscape planner. Draw ground surfaces, place plants,
 structures and furniture to scale in metres, and import your own artwork.
@@ -82,3 +82,12 @@ times, wrapped across the tile edges.
 Local-first. Plans and custom assets live in IndexedDB (`state/db.ts`) and
 autosave on a debounce. Plans export as `.greenr` JSON; custom assets export as
 `.greenrpack` bundles with the artwork inlined as data URLs.
+
+`navigator.storage.persist()` is requested on startup, which moves the origin
+out of the browser's evictable bucket. That is the single most important line
+for a local-first app and the reason this does not yet need a backend.
+
+The IndexedDB name, the file extensions and the format strings inside saved
+files all predate the rename to Draw Greenr and are deliberately left as
+`greenr`. They are storage identity, not branding: changing them would orphan
+saved plans and make already-exported files unopenable.

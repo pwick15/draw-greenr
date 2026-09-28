@@ -11,6 +11,7 @@ import { exportDocJson, exportPng, importDocJson } from '@/state/persistence'
 
 import {
   CopyIcon,
+  CubeIcon,
   CursorIcon,
   DownloadIcon,
   GridIcon,
@@ -36,7 +37,7 @@ const TOOLS = [
   { id: 'measure', label: 'Measure', shortcut: 'M', Icon: RulerIcon },
 ] as const
 
-export function Toolbar() {
+export function Toolbar({ onOpenIso }: { onOpenIso: () => void }) {
   const tool = useEditorStore((s) => s.tool)
   const setTool = useEditorStore((s) => s.setTool)
   const snapToGrid = useEditorStore((s) => s.snapToGrid)
@@ -76,9 +77,26 @@ export function Toolbar() {
   return (
     <header className="flex h-14 shrink-0 items-center gap-2 border-b border-stone-200 bg-white px-3">
       <div className="flex items-center gap-2 pr-1">
-        <span className="grid h-8 w-8 place-items-center rounded-lg bg-emerald-600 text-sm font-bold text-white">
-          G
+        <span
+          className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-emerald-600"
+          title="Draw Greenr"
+        >
+          <svg width="20" height="20" viewBox="0 0 64 64" aria-label="Draw Greenr" role="img">
+            <path d="M17 47C17 30 29 17 47 17c0 18-13 30-30 30Z" fill="#eaf6ef" />
+            <path
+              d="M17 47C25 39 34 30 47 17"
+              stroke="#1f8f5f"
+              strokeWidth="3.2"
+              strokeLinecap="round"
+              fill="none"
+            />
+          </svg>
         </span>
+        {/* Wordmark only where there is room; the toolbar is dense already. */}
+        <span className="hidden shrink-0 text-sm font-semibold tracking-tight text-stone-800 xl:block">
+          Draw Greenr
+        </span>
+        <span className="hidden h-5 w-px shrink-0 bg-stone-200 xl:block" />
         <input
           value={doc.name}
           onChange={(e) => {
@@ -174,6 +192,9 @@ export function Toolbar() {
         </label>
         <Button size="sm" variant="ghost" onClick={exportDocJson} title="Download this plan as a file">
           <SaveIcon size={16} />
+        </Button>
+        <Button size="sm" onClick={onOpenIso} title="See this plan in 3D">
+          <CubeIcon size={16} /> 3D
         </Button>
         <Button size="sm" variant="primary" disabled={busy} onClick={() => void handleExportPng()}>
           {busy ? (

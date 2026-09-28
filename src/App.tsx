@@ -10,6 +10,7 @@ import { requestPersistentStorage } from '@/state/storage'
 import { AssetPanel } from '@/ui/AssetPanel'
 import { ImportAssetDialog } from '@/ui/ImportAssetDialog'
 import { Inspector } from '@/ui/Inspector'
+import { IsoPanel } from '@/ui/IsoPanel'
 import { LayersPanel } from '@/ui/LayersPanel'
 import { SidebarToggle } from '@/ui/SidebarToggle'
 import { Toolbar } from '@/ui/Toolbar'
@@ -18,6 +19,7 @@ export default function App() {
   const [importOpen, setImportOpen] = useState(false)
   const [droppedFile, setDroppedFile] = useState<File | null>(null)
   const [restored, setRestored] = useState(false)
+  const [iso, setIso] = useState(false)
 
   const showLeft = useEditorStore((s) => s.showLeftPanel)
   const showRight = useEditorStore((s) => s.showRightPanel)
@@ -52,7 +54,7 @@ export default function App() {
 
   return (
     <div className="flex h-full w-full flex-col bg-stone-100 text-stone-900">
-      <Toolbar />
+      <Toolbar onOpenIso={() => setIso(true)} />
 
       <div className="flex min-h-0 flex-1">
         {/* Collapsed panels are unmounted rather than hidden: the asset grid
@@ -69,6 +71,9 @@ export default function App() {
 
         <main className="relative min-w-0 flex-1">
           {restored && <PlanCanvas onFileDropped={openImport} />}
+          {/* Sits over the canvas rather than replacing it, so the 2D view
+              keeps its Konva stage and viewport while you look at the 3D. */}
+          {iso && <IsoPanel onClose={() => setIso(false)} />}
           <SidebarToggle
             side="left"
             open={showLeft}

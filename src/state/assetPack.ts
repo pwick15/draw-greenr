@@ -11,6 +11,8 @@ import { getCustomAsset, listCustomMaterials } from './db'
  * dependency, and can be hand-edited — which matters for something users are
  * meant to trade between each other.
  */
+// Unchanged by the rename to Draw Greenr, for the same reason as the document
+// format: these strings live inside files people have already exported.
 export const PACK_FORMAT = 'greenr-asset-pack'
 export const PACK_VERSION = 1
 export const PACK_EXTENSION = 'greenrpack'
@@ -112,7 +114,10 @@ export async function exportAssetPack(assetIds: string[], includeMaterials = tru
     materials,
   }
   const stamp = new Date().toISOString().slice(0, 10)
-  download(`greenr-assets-${stamp}.${PACK_EXTENSION}`, new Blob([JSON.stringify(pack)], { type: 'application/json' }))
+  download(
+    `draw-greenr-assets-${stamp}.${PACK_EXTENSION}`,
+    new Blob([JSON.stringify(pack)], { type: 'application/json' }),
+  )
 }
 
 const VALID_BANDS = new Set<number>(Object.values(Band))

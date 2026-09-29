@@ -8,7 +8,7 @@ import {
   type DistributeMode,
 } from '@/core/arrange'
 import { objectBounds, unionRects } from '@/core/geometry'
-import { eraseFromAll } from '@/core/surfaces'
+import { eraseFromAll, removePolygonAt } from '@/core/surfaces'
 import { selectionBounds } from '@/core/transform'
 import type { BandId, GardenObject, Rect, SelectionRef, Vec2 } from '@/core/types'
 import { fitRect } from '@/core/viewport'
@@ -47,13 +47,34 @@ const selectedSurfaceIds = (): string[] =>
 // Editing
 // ---------------------------------------------------------------------------
 
+/**
+ * Delete the selection — one patch of ground at a time, not one material.
+ *
+ * A surface holds every patch of its material, so deleting the record would
+ * take every other patch with it. When the selection came from clicking the
+ * plan we know which patch was meant and remove only that one; a selection
+ * made from the layers panel really does mean the whole material, and falls
+ * through to removing the record.
+ */
 export function deleteSelection(): void {
   const objectIds = selectedObjectIds()
   const surfaceIds = selectedSurfaceIds()
   if (objectIds.length === 0 && surfaceIds.length === 0) return
+  const at = editor().editingSurfacePoint
+
   doc().apply('Delete', (draft) => {
     for (const id of objectIds) delete draft.objects[id]
-    if (surfaceIds.length) draft.surfaces = draft.surfaces.filter((s) => !surfaceIds.includes(s.id))
+
+    const emptied: string[] = []
+    for (const id of surfaceIds) {
+      const surface = draft.surfaces.find((s) => s.id === id)
+      if (!surface) continue
+      const remaining = at ? removePolygonAt(surface.geometry, at) : null
+      if (remaining === null) emptied.push(id)
+      else if (remaining.length === 0) emptied.push(id)
+      else surface.geometry = remaining
+    }
+    if (emptied.length) draft.surfaces = draft.surfaces.filter((s) => !emptied.includes(s.id))
   })
   editor().clearSelection()
 }

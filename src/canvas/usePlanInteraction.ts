@@ -2,7 +2,7 @@ import type Konva from 'konva'
 import type { KonvaEventObject } from 'konva/lib/Node'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import { dist, objectBounds, rectFromPoints } from '@/core/geometry'
+import { dist, objectBounds, pointInPoly, rectFromPoints } from '@/core/geometry'
 import { pickInRect, resolvePick, type PickOptions } from '@/core/picking'
 import { dragRect, ellipseRing, rectRing, strokePath } from '@/core/shapes'
 import { constrainAngle, snapPointToGrid, snapPlotPoint, snapRectToRects, type Guide } from '@/core/snapping'
@@ -16,7 +16,7 @@ import {
   snapAngle,
   type HandleId,
 } from '@/core/transform'
-import type { GardenObject, MultiPoly, Rect, SelectionRef, Vec2 } from '@/core/types'
+import type { GardenDoc, GardenObject, MultiPoly, Rect, SelectionRef, Vec2 } from '@/core/types'
 import { screenToWorld, zoomAt } from '@/core/viewport'
 import { getAsset, getAssets, getMaterials, useAssetStore } from '@/state/assets'
 import { duplicateObjectsInPlace } from '@/state/commands'
@@ -397,7 +397,9 @@ export function usePlanInteraction(stageRef: React.RefObject<Konva.Stage | null>
       if (!already) editor.select([result.ref])
 
       if (result.ref.kind === 'surface') {
-        editor.setEditingSurface(result.ref.id)
+        // Remember where, not just which: a surface holds every patch of its
+        // material, so the click point is what identifies the patch meant.
+        editor.setEditingSurface(result.ref.id, world)
         return
       }
       editor.setEditingSurface(null)
@@ -446,7 +448,7 @@ export function usePlanInteraction(stageRef: React.RefObject<Konva.Stage | null>
           if (editor.tool === 'select') {
             const { doc } = useDocStore.getState()
             const hit = resolvePick(doc, getAssets(), world, null, pickOptions(), false)
-            editor.setHover(hit.ref)
+            editor.setHover(hit.ref, polygonUnder(doc, hit.ref, world))
             // Identical values make this a no-op in React, so the common case
             // costs nothing and only the transition re-renders.
             setCopyArmed((native.metaKey || native.ctrlKey) && editor.selection.length > 0)
@@ -759,6 +761,20 @@ export function usePlanInteraction(stageRef: React.RefObject<Konva.Stage | null>
 }
 
 // ---------------------------------------------------------------------------
+
+/**
+ * Which patch of a surface a point falls in, or null for anything else.
+ *
+ * A surface holds every patch of its material, so highlighting the whole
+ * record would light up paving on the other side of the garden.
+ */
+function polygonUnder(doc: GardenDoc, ref: SelectionRef | null, at: Vec2): number | null {
+  if (ref?.kind !== 'surface') return null
+  const surface = doc.surfaces.find((s) => s.id === ref.id)
+  if (!surface) return null
+  const index = surface.geometry.findIndex((poly) => pointInPoly(poly, at))
+  return index < 0 ? null : index
+}
 
 function boundsOfMoved(objects: GardenObject[], delta: Vec2): Rect | null {
   return selectionBounds(objects.map((o) => ({ ...o, x: o.x + delta.x, y: o.y + delta.y })))

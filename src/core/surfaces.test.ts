@@ -8,10 +8,11 @@ import {
   moveVertex,
   paintSurface,
   pointsToRing,
+  removePolygonAt,
   removeVertex,
   unionMulti,
 } from './surfaces'
-import type { MaterialDef, MultiPoly, Surface, Vec2 } from './types'
+import type { MaterialDef, MultiPoly, Ring, Surface, Vec2 } from './types'
 
 const material = (id: string, occludes = true): MaterialDef => ({
   id,
@@ -185,5 +186,58 @@ describe('vertex editing', () => {
       ],
     ]
     expect(removeVertex(triangle, ref)).toBe(triangle)
+  })
+})
+
+describe('removePolygonAt', () => {
+  const square = (ox: number): Ring =>
+    pointsToRing([
+      { x: ox, y: 0 },
+      { x: ox + 4, y: 0 },
+      { x: ox + 4, y: 4 },
+      { x: ox, y: 4 },
+    ])
+  // Three separate patches of one material, as the partition model stores them.
+  const patches: MultiPoly = [[square(0)], [square(10)], [square(20)]]
+
+  it('removes only the patch under the point', () => {
+    const left = removePolygonAt(patches, { x: 2, y: 2 })!
+    expect(left).toHaveLength(2)
+    expect(multiPolyArea(left)).toBeCloseTo(32, 6)
+  })
+
+  it('leaves the other patches exactly where they were', () => {
+    const left = removePolygonAt(patches, { x: 12, y: 2 })!
+    expect(left[0]).toBe(patches[0])
+    expect(left[1]).toBe(patches[2])
+  })
+
+  it('reports a miss rather than silently deleting nothing', () => {
+    expect(removePolygonAt(patches, { x: 100, y: 100 })).toBeNull()
+  })
+
+  it('empties the geometry when the last patch goes', () => {
+    expect(removePolygonAt([[square(0)]], { x: 2, y: 2 })).toEqual([])
+  })
+
+  it('treats a hole as outside the patch', () => {
+    const holed: MultiPoly = [
+      [
+        pointsToRing([
+          { x: 0, y: 0 },
+          { x: 10, y: 0 },
+          { x: 10, y: 10 },
+          { x: 0, y: 10 },
+        ]),
+        pointsToRing([
+          { x: 3, y: 3 },
+          { x: 7, y: 3 },
+          { x: 7, y: 7 },
+          { x: 3, y: 7 },
+        ]),
+      ],
+    ]
+    expect(removePolygonAt(holed, { x: 5, y: 5 })).toBeNull()
+    expect(removePolygonAt(holed, { x: 1, y: 1 })).toEqual([])
   })
 })

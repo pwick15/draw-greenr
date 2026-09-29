@@ -9,6 +9,7 @@ import { useEditorStore } from '@/state/editor'
 import { useQuickAccessStore } from '@/state/quickAccess'
 
 import { ASSET_DRAG_TYPE } from './AssetPanel'
+import { setAssetDragImage } from './dragGhost'
 import { StarIcon } from './icons'
 
 /**
@@ -37,7 +38,30 @@ export function QuickAccessTray() {
   const starred = resolve(favourites)
   const recent = resolve(recents).filter((a) => !favourites.includes(a.id))
 
-  if (starred.length === 0 && recent.length === 0) return null
+  // Rendering nothing at all was the wrong call: the tray simply was not there
+  // on a fresh plan, which reads as a missing feature rather than an empty one.
+  if (starred.length === 0 && recent.length === 0) {
+    return (
+      <div
+        onPointerEnter={() => setOpen(true)}
+        onPointerLeave={() => setOpen(false)}
+        className={clsx(
+          'absolute left-0 top-3 z-20 overflow-hidden rounded-r-xl',
+          'bg-white/95 shadow-sm ring-1 ring-stone-200 backdrop-blur transition-[width] duration-150',
+          open ? 'w-[196px]' : 'w-[46px]',
+        )}
+      >
+        <div className="flex items-center gap-2 p-2.5">
+          <StarIcon size={18} className="shrink-0 text-stone-300" />
+          {open && (
+            <p className="text-[10px] leading-snug text-stone-400">
+              Assets you place show up here. Star one to keep it.
+            </p>
+          )}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div
@@ -121,6 +145,7 @@ function QuickTile({ asset, open, starred }: { asset: AssetDef; open: boolean; s
         onDragStart={(e) => {
           e.dataTransfer.setData(ASSET_DRAG_TYPE, asset.id)
           e.dataTransfer.effectAllowed = 'copy'
+          setAssetDragImage(e, asset)
         }}
         onClick={() => setPlacing(placing ? null : asset.id)}
         onPointerEnter={() => void loadImage(asset.src)}

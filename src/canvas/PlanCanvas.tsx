@@ -54,6 +54,8 @@ export function PlanCanvas({ onFileDropped }: PlanCanvasProps) {
   const pathWidth = useEditorStore((s) => s.pathWidth)
   const measure = useEditorStore((s) => s.measure)
   const editingSurfaceId = useEditorStore((s) => s.editingSurfaceId)
+  const editingSurfacePoint = useEditorStore((s) => s.editingSurfacePoint)
+  const hoverPolyIndex = useEditorStore((s) => s.hoverPolyIndex)
   const tool = useEditorStore((s) => s.tool)
   const showGrid = useEditorStore((s) => s.showGrid)
   const showSpread = useEditorStore((s) => s.showSpread)
@@ -245,6 +247,8 @@ export function PlanCanvas({ onFileDropped }: PlanCanvasProps) {
           placement={placement}
           measure={measure}
           editingSurfaceId={editingSurfaceId}
+          editingSurfacePoint={editingSurfacePoint}
+          hoverPolyIndex={hoverPolyIndex}
           gestureKind={interaction.gestureKind}
           onHandleDown={interaction.beginResize}
           onRotateDown={interaction.beginRotate}

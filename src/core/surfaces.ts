@@ -1,6 +1,6 @@
 import * as polyclip from 'polyclip-ts'
 
-import { multiPolyArea, simplifyMultiPoly } from './geometry'
+import { multiPolyArea, pointInPoly, simplifyMultiPoly } from './geometry'
 import type { MaterialDef, MultiPoly, Pair, Ring, Surface, Vec2 } from './types'
 
 // Exact arithmetic is the library default and is very slow. At garden scale a
@@ -135,6 +135,23 @@ export function paintSurface(
     surfaces: kept.sort((a, b) => a.order - b.order),
     addedArea: (after ? multiPolyArea(after.geometry) : 0) - beforeArea,
   }
+}
+
+/**
+ * Drop the one polygon containing a point.
+ *
+ * A material is stored as a single surface holding every patch of it, which is
+ * what keeps the plan free of z-fighting — but it also means "delete this
+ * patch" cannot be "delete this surface", or clicking one square of paving
+ * would take every other square with it.
+ *
+ * Returns null when the point is not inside anything, so the caller can tell
+ * "nothing was hit" apart from "the last patch was removed".
+ */
+export function removePolygonAt(geometry: MultiPoly, point: Vec2): MultiPoly | null {
+  const index = geometry.findIndex((poly) => pointInPoly(poly, point))
+  if (index < 0) return null
+  return geometry.filter((_, i) => i !== index)
 }
 
 /** Erase a polygon from every material at once. */

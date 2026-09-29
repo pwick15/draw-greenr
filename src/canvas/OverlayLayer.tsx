@@ -13,7 +13,7 @@ import {
   Text,
 } from 'react-konva'
 
-import { dist, objectBounds, polyArea } from '@/core/geometry'
+import { dist, objectBounds, pointInPoly, polyArea } from '@/core/geometry'
 import { useLoadedImage } from '@/core/imageCache'
 import { spreadRings, type SpreadRing } from '@/core/mature'
 import { pathLength } from '@/core/shapes'
@@ -66,6 +66,8 @@ interface OverlayLayerProps {
   placement: { asset: AssetDef; point: Vec2 } | null
   measure: MeasureState | null
   editingSurfaceId: string | null
+  editingSurfacePoint: Vec2 | null
+  hoverPolyIndex: number | null
   gestureKind: string
   onHandleDown: (handle: HandleId, event: KonvaEventObject<PointerEvent>) => void
   onRotateDown: (event: KonvaEventObject<PointerEvent>) => void
@@ -90,6 +92,8 @@ export function OverlayLayer({
   placement,
   measure,
   editingSurfaceId,
+  editingSurfacePoint,
+  hoverPolyIndex,
   gestureKind,
   onHandleDown,
   onRotateDown,
@@ -117,6 +121,19 @@ export function OverlayLayer({
   const single = selectedObjects.length === 1 ? selectedObjects[0] : null
   const transforming = gestureKind === 'resize' || gestureKind === 'rotate' || gestureKind === 'move'
 
+  /**
+   * Highlight the patch that was clicked, not every patch of its material.
+   *
+   * Falls back to the whole surface when there is no click point — which is
+   * what selecting the material's row in the layers panel means, and matches
+   * what deleting it will do.
+   */
+  const selectedPolyIndex = (surface: Surface): number | null => {
+    if (!editingSurfacePoint) return null
+    const index = surface.geometry.findIndex((poly) => pointInPoly(poly, editingSurfacePoint))
+    return index < 0 ? null : index
+  }
+
   // Only recomputed when the objects themselves change: the pairwise crowding
   // pass is cheap but not free, and this layer re-renders on every drag frame.
   const rings = useMemo(
@@ -136,11 +153,22 @@ export function OverlayLayer({
         <OrientedOutline object={hoverObject} stroke={HOVER} width={1.5 * px} dash={null} />
       )}
       {hoverSurface && !selection.some((r) => r.id === hoverSurface.id) && (
-        <SurfaceOutline surface={hoverSurface} stroke={HOVER} width={1.5 * px} />
+        <SurfaceOutline
+          surface={hoverSurface}
+          stroke={HOVER}
+          width={1.5 * px}
+          only={hoverPolyIndex}
+        />
       )}
 
       {selectedSurfaces.map((surface) => (
-        <SurfaceOutline key={surface.id} surface={surface} stroke={ACCENT} width={1.5 * px} />
+        <SurfaceOutline
+          key={surface.id}
+          surface={surface}
+          stroke={ACCENT}
+          width={1.5 * px}
+          only={selectedPolyIndex(surface)}
+        />
       ))}
 
       {selectedObjects.map((object) => (
@@ -208,7 +236,13 @@ export function OverlayLayer({
         (() => {
           const surface = doc.surfaces.find((s) => s.id === editingSurfaceId)
           if (!surface || surface.locked) return null
-          return surfaceVertices(surface).map((vertex) => (
+          // Corners of the clicked patch only. Every patch of a material lives
+          // in one surface, so handing out all of them scatters draggable dots
+          // across paving at the other end of the garden.
+          const only = selectedPolyIndex(surface)
+          return surfaceVertices(surface)
+            .filter((v) => only === null || v.polyIndex === only)
+            .map((vertex) => (
             <Circle
               key={`${vertex.polyIndex}-${vertex.ringIndex}-${vertex.vertexIndex}`}
               x={vertex.point.x}
@@ -331,10 +365,34 @@ function OrientedOutline({ object, stroke, width, dash }: OrientedOutlineProps) 
   )
 }
 
-function SurfaceOutline({ surface, stroke, width }: { surface: Surface; stroke: string; width: number }) {
+/**
+ * Outline a surface — or, given an index, just one patch of it.
+ *
+ * One surface holds every patch of its material, so outlining the whole record
+ * lights up paving on the other side of the garden when you click one slab.
+ * `only` narrows that to the patch actually under the pointer.
+ */
+function SurfaceOutline({
+  surface,
+  stroke,
+  width,
+  only,
+}: {
+  surface: Surface
+  stroke: string
+  width: number
+  only?: number | null
+}) {
+  const polys =
+    only === null || only === undefined
+      ? surface.geometry.map((poly, pi) => [poly, pi] as const)
+      : surface.geometry[only]
+        ? [[surface.geometry[only], only] as const]
+        : []
+
   return (
     <>
-      {surface.geometry.map((poly, pi) =>
+      {polys.map(([poly, pi]) =>
         poly.map((ring, ri) => (
           <Line
             key={`${pi}-${ri}`}

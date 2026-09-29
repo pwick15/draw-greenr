@@ -9,6 +9,7 @@ import { useEditorStore } from '@/state/editor'
 import { useQuickAccessStore } from '@/state/quickAccess'
 
 import { CATEGORY_ICONS } from './categoryIcons'
+import { setAssetDragImage } from './dragGhost'
 import { PlotIcon, StarIcon, UploadIcon } from './icons'
 import { Button, EmptyState, Panel, TextInput } from './primitives'
 import { PlotPalette } from './PlotPalette'
@@ -201,6 +202,7 @@ export function AssetTile({ asset }: { asset: AssetDef }) {
         onDragStart={(e) => {
           e.dataTransfer.setData(ASSET_DRAG_TYPE, asset.id)
           e.dataTransfer.effectAllowed = 'copy'
+          setAssetDragImage(e, asset)
         }}
         onClick={() => setPlacing(placing ? null : asset.id)}
         // Decode on hover so the placement preview is there the instant it is

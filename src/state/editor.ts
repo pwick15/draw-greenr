@@ -46,6 +46,12 @@ interface EditorState {
 
   selection: SelectionRef[]
   hover: SelectionRef | null
+  /**
+   * Which patch of a hovered surface the pointer is over. Held as an index
+   * rather than a point so it only changes when a boundary is crossed — a
+   * point would re-render this layer on every pointer move.
+   */
+  hoverPolyIndex: number | null
   pickCycle: PickCycleState | null
   /** "3 of 7" readout after a cycling click. */
   pickStatus: { depth: number; total: number } | null
@@ -75,6 +81,11 @@ interface EditorState {
 
   /** Surface whose vertices are currently editable. */
   editingSurfaceId: string | null
+  /**
+   * Where that surface was clicked. A surface holds every patch of its
+   * material, so this is the only thing that says *which* patch was meant.
+   */
+  editingSurfacePoint: Vec2 | null
 
   measure: MeasureState | null
 
@@ -110,7 +121,7 @@ interface EditorState {
   select: (refs: SelectionRef[]) => void
   toggleSelect: (ref: SelectionRef) => void
   clearSelection: () => void
-  setHover: (ref: SelectionRef | null) => void
+  setHover: (ref: SelectionRef | null, polyIndex?: number | null) => void
   setPick: (cycle: PickCycleState | null, status: { depth: number; total: number } | null) => void
 
   setPlacing: (assetId: string | null) => void
@@ -127,7 +138,7 @@ interface EditorState {
   popPlotPoint: () => void
   clearPlot: () => void
 
-  setEditingSurface: (id: string | null) => void
+  setEditingSurface: (id: string | null, at?: Vec2 | null) => void
   setMeasure: (measure: MeasureState | null) => void
 
   setIsolatedBand: (band: BandId | null) => void
@@ -161,6 +172,7 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
 
   selection: [],
   hover: null,
+  hoverPolyIndex: null,
   pickCycle: null,
   pickStatus: null,
 
@@ -176,6 +188,7 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
   plotCursor: null,
 
   editingSurfaceId: null,
+  editingSurfacePoint: null,
   measure: null,
 
   isolatedBand: null,
@@ -236,13 +249,20 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
   },
 
   clearSelection() {
-    set({ selection: [], pickCycle: null, pickStatus: null, editingSurfaceId: null })
+    set({
+      selection: [],
+      pickCycle: null,
+      pickStatus: null,
+      editingSurfaceId: null,
+      editingSurfacePoint: null,
+    })
   },
 
-  setHover(ref) {
-    const { hover } = get()
-    if (hover === ref || (hover && ref && sameRef(hover, ref))) return
-    set({ hover: ref })
+  setHover(ref, polyIndex = null) {
+    const { hover, hoverPolyIndex } = get()
+    const sameTarget = hover === ref || (hover && ref && sameRef(hover, ref))
+    if (sameTarget && hoverPolyIndex === polyIndex) return
+    set({ hover: ref, hoverPolyIndex: polyIndex })
   },
 
   setPick(cycle, status) {
@@ -308,8 +328,8 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
     set({ plotDraft: [], plotCursor: null })
   },
 
-  setEditingSurface(id) {
-    set({ editingSurfaceId: id })
+  setEditingSurface(id, at = null) {
+    set({ editingSurfaceId: id, editingSurfacePoint: id ? at : null })
   },
 
   setMeasure(measure) {

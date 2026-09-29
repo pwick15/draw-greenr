@@ -246,6 +246,39 @@ export function openRing(ring: Ring): Ring {
  * Drop vertices that sit almost exactly on the line between their neighbours.
  * Boolean ops leave a lot of these behind and they slow every later op down.
  */
+/**
+ * Smallest convex ring enclosing a set of points — Andrew's monotone chain.
+ *
+ * Returned open, like every other ring here, and wound the same way regardless
+ * of the input order so area and point-in-ring tests behave predictably.
+ */
+export function convexHull(points: readonly Vec2[]): Ring {
+  if (points.length < 3) return points.map(toPair)
+
+  const sorted = points
+    .map(toPair)
+    .sort((a, b) => a[0] - b[0] || a[1] - b[1])
+    .filter((p, i, list) => i === 0 || p[0] !== list[i - 1][0] || p[1] !== list[i - 1][1])
+  if (sorted.length < 3) return sorted
+
+  const cross = (o: Pair, a: Pair, b: Pair): number =>
+    (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+
+  const half = (input: Pair[]): Pair[] => {
+    const chain: Pair[] = []
+    for (const p of input) {
+      while (chain.length >= 2 && cross(chain[chain.length - 2], chain[chain.length - 1], p) <= 0) {
+        chain.pop()
+      }
+      chain.push(p)
+    }
+    // The last point of each half is the first of the other, so drop it.
+    return chain.slice(0, -1)
+  }
+
+  return [...half(sorted), ...half(sorted.slice().reverse())]
+}
+
 export function simplifyRing(input: Ring, epsilon = 1e-4): Ring {
   const ring = openRing(input)
   if (ring.length < 4) return ring

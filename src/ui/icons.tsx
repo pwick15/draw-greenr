@@ -299,3 +299,55 @@ export const ImageIcon = (p: IconProps) => (
     <path d="m4 17 5-5 4 4 3-3 4 4" />
   </Icon>
 )
+
+export const PolygonIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M12 3.5 20.5 9 17 19.5H7L3.5 9Z" />
+  </Icon>
+)
+
+export const SquareIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="4" y="5" width="16" height="14" rx="1.5" />
+  </Icon>
+)
+
+export const CircleIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <ellipse cx="12" cy="12" rx="8.5" ry="7" />
+  </Icon>
+)
+
+export const PathIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M4 19c4.5 0 3.5-7 8-7s3.5-7 8-7" />
+    <path d="M4 19c4.5 0 3.5-7 8-7s3.5-7 8-7" strokeOpacity="0.35" strokeWidth={5.5} />
+  </Icon>
+)
+
+export const StarIcon = ({ filled, ...p }: IconProps & { filled?: boolean }) => (
+  <Icon {...p} fill={filled ? 'currentColor' : 'none'}>
+    <path d="m12 3.6 2.6 5.27 5.82.85-4.21 4.1.99 5.8L12 16.88l-5.2 2.74.99-5.8-4.21-4.1 5.82-.85Z" />
+  </Icon>
+)
+
+export const ListIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M9 6h11M9 12h11M9 18h11" />
+    <path d="M4.5 6h.01M4.5 12h.01M4.5 18h.01" strokeWidth={2.4} />
+  </Icon>
+)
+
+export const SpreadIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <circle cx="12" cy="12" r="3.2" fill="currentColor" stroke="none" />
+    <circle cx="12" cy="12" r="8.2" strokeDasharray="3 2.6" />
+  </Icon>
+)
+
+export const SunIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <circle cx="12" cy="12" r="4" />
+    <path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.2 5.2l1.4 1.4M17.4 17.4l1.4 1.4M18.8 5.2l-1.4 1.4M6.6 17.4l-1.4 1.4" />
+  </Icon>
+)

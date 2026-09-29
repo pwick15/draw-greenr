@@ -181,6 +181,14 @@ export interface DocSettings {
   showGrid: boolean
   /** Background beyond any painted surface. */
   backgroundColor: string
+  /**
+   * Compass bearing the top of the plan points to. 0 is north-up, which is how
+   * plans are normally drawn — change it for a site surveyed square to a wall
+   * that does not happen to run east-west.
+   */
+  northUp: number
+  /** Site latitude, which is what sets how high the sun ever gets. */
+  latitude: number
 }
 
 export interface GardenDoc {
@@ -200,6 +208,10 @@ export const DEFAULT_SETTINGS: DocSettings = {
   snapTolerance: 10,
   showGrid: true,
   backgroundColor: '#eef1ec',
+  northUp: 0,
+  // Roughly the middle of the UK. Wrong for most of the world, but a default
+  // has to be somewhere and it is one field to change.
+  latitude: 52.5,
 }
 
 // ---------------------------------------------------------------------------

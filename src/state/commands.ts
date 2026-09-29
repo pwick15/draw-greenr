@@ -25,6 +25,7 @@ import {
   type ReorderMove,
 } from './document'
 import { useEditorStore } from './editor'
+import { noteAssetUse } from './quickAccess'
 
 const doc = () => useDocStore.getState()
 const editor = () => useEditorStore.getState()
@@ -57,19 +58,35 @@ export function deleteSelection(): void {
   editor().clearSelection()
 }
 
+/** Ignoring order, do these two lists name the same objects? */
+function sameIds(a: readonly string[], b: readonly string[]): boolean {
+  if (a.length !== b.length) return false
+  const set = new Set(a)
+  return b.every((id) => set.has(id))
+}
+
 /**
- * Duplicate flush to the right of the original, matching paste.
+ * Duplicate flush to the right of the original — or by the last offset dragged.
  *
- * "Duplicate" and "copy then paste" mean the same thing to almost everyone, so
- * they place identically — and butting copies together is what actually gets
- * used here, laying out a run of paving or a row of shrubs.
+ * With no offset remembered, "duplicate" and "copy then paste" mean the same
+ * thing to almost everyone, so they place identically: butting copies together
+ * is what actually gets used here, laying out a run of paving or a row of
+ * shrubs.
+ *
+ * Once a ⌘-drag has set an offset, this repeats *that* step instead, and hands
+ * the offset on to the copies it makes. Holding ⌘D then walks a row out at
+ * whatever spacing was dragged — which beats duplicating and nudging each one.
  */
 export function duplicateSelection(): void {
   const ids = selectedObjectIds()
   if (ids.length === 0) return
   const objects = ids.map((id) => doc().doc.objects[id]).filter(Boolean)
-  const bounds = selectionBounds(objects)
-  const dx = bounds?.w ?? 0
+
+  const repeat = editor().repeatOffset
+  const delta =
+    repeat && sameIds(repeat.ids, ids)
+      ? repeat.delta
+      : { x: selectionBounds(objects)?.w ?? 0, y: 0 }
 
   const created: SelectionRef[] = []
   doc().apply(ids.length > 1 ? `Duplicate ${ids.length} items` : 'Duplicate', (draft) => {
@@ -79,15 +96,41 @@ export function duplicateSelection(): void {
       const copy: GardenObject = {
         ...source,
         id: newId('obj'),
-        x: source.x + dx,
-        y: source.y,
+        x: source.x + delta.x,
+        y: source.y + delta.y,
         order: topOfBand(draft, source.band),
       }
       draft.objects[copy.id] = copy
       created.push({ kind: 'object', id: copy.id })
     }
   })
-  if (created.length) editor().select(created)
+  if (created.length === 0) return
+  editor().select(created)
+  editor().setRepeatOffset({ ids: created.map((r) => r.id), delta })
+}
+
+/**
+ * Copy objects where they stand, inside an already-open transaction.
+ *
+ * This is the first half of a ⌘-drag: the copies take over the drag while the
+ * originals stay put, so duplicating and moving collapse into a single undo
+ * step rather than two.
+ */
+export function duplicateObjectsInPlace(objects: readonly GardenObject[]): GardenObject[] {
+  const copies: GardenObject[] = []
+  doc().update((draft) => {
+    for (const source of objects) {
+      const copy: GardenObject = {
+        ...source,
+        id: newId('obj'),
+        order: topOfBand(draft, source.band),
+      }
+      draft.objects[copy.id] = copy
+      copies.push(copy)
+    }
+  })
+  if (copies.length) editor().select(copies.map((o) => ({ kind: 'object', id: o.id })))
+  return copies
 }
 
 // ---------------------------------------------------------------------------
@@ -365,4 +408,5 @@ export function placeAssetAtCentre(assetId: string): void {
     }
   })
   select([{ kind: 'object', id }])
+  noteAssetUse(asset.id)
 }

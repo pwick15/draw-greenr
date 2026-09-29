@@ -17,11 +17,14 @@ import {
   GridIcon,
   HandIcon,
   ImageIcon,
+  ListIcon,
   MagnetIcon,
   PlotIcon,
   RedoIcon,
   RulerIcon,
   SaveIcon,
+  SpreadIcon,
+  SunIcon,
   TargetIcon,
   TrashIcon,
   UndoIcon,
@@ -37,11 +40,19 @@ const TOOLS = [
   { id: 'measure', label: 'Measure', shortcut: 'M', Icon: RulerIcon },
 ] as const
 
-export function Toolbar({ onOpenIso }: { onOpenIso: () => void }) {
+export function Toolbar({
+  onOpenIso,
+  onOpenSchedule,
+}: {
+  onOpenIso: () => void
+  onOpenSchedule: () => void
+}) {
   const tool = useEditorStore((s) => s.tool)
   const setTool = useEditorStore((s) => s.setTool)
   const snapToGrid = useEditorStore((s) => s.snapToGrid)
   const showGrid = useEditorStore((s) => s.showGrid)
+  const showSpread = useEditorStore((s) => s.showSpread)
+  const showShadows = useEditorStore((s) => s.showShadows)
   const toggle = useEditorStore((s) => s.toggle)
   const selection = useEditorStore((s) => s.selection)
 
@@ -168,6 +179,22 @@ export function Toolbar({ onOpenIso }: { onOpenIso: () => void }) {
         >
           <MagnetIcon />
         </ToolButton>
+        <ToolButton
+          label="Mature size"
+          shortcut="W  ·  rings show grown spread"
+          active={showSpread}
+          onClick={() => toggle('showSpread')}
+        >
+          <SpreadIcon />
+        </ToolButton>
+        <ToolButton
+          label="Sun study"
+          shortcut="U  ·  shadows through the day"
+          active={showShadows}
+          onClick={() => toggle('showShadows')}
+        >
+          <SunIcon />
+        </ToolButton>
         <ToolButton label="Zoom to fit" shortcut="⌘0" onClick={zoomToFit}>
           <TargetIcon />
         </ToolButton>
@@ -192,6 +219,14 @@ export function Toolbar({ onOpenIso }: { onOpenIso: () => void }) {
         </label>
         <Button size="sm" variant="ghost" onClick={exportDocJson} title="Download this plan as a file">
           <SaveIcon size={16} />
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={onOpenSchedule}
+          title="Counts, areas and lengths for this plan"
+        >
+          <ListIcon size={16} />
         </Button>
         <Button size="sm" onClick={onOpenIso} title="See this plan in 3D">
           <CubeIcon size={16} /> 3D

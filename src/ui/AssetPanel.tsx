@@ -6,9 +6,10 @@ import type { AssetDef } from '@/core/types'
 import { formatDistance } from '@/core/viewport'
 import { useAssetStore } from '@/state/assets'
 import { useEditorStore } from '@/state/editor'
+import { useQuickAccessStore } from '@/state/quickAccess'
 
 import { CATEGORY_ICONS } from './categoryIcons'
-import { PlotIcon, UploadIcon } from './icons'
+import { PlotIcon, StarIcon, UploadIcon } from './icons'
 import { Button, EmptyState, Panel, TextInput } from './primitives'
 import { PlotPalette } from './PlotPalette'
 import { MyAssetsPanel } from './MyAssetsPanel'
@@ -181,40 +182,62 @@ export function AssetTile({ asset }: { asset: AssetDef }) {
   const thumbFor = useAssetStore((s) => s.thumbFor)
   const placing = useEditorStore((s) => s.placingAssetId === asset.id)
   const setPlacing = useEditorStore((s) => s.setPlacing)
+  const starred = useQuickAccessStore((s) => s.favourites.includes(asset.id))
+  const toggleFavourite = useQuickAccessStore((s) => s.toggleFavourite)
 
   return (
-    <button
-      type="button"
-      draggable
-      onDragStart={(e) => {
-        e.dataTransfer.setData(ASSET_DRAG_TYPE, asset.id)
-        e.dataTransfer.effectAllowed = 'copy'
-      }}
-      onClick={() => setPlacing(placing ? null : asset.id)}
-      // Decode on hover so the placement preview is there the instant it is
-      // clicked. This also builds the alpha mask, which picking wants as soon
-      // as the object lands.
-      onPointerEnter={() => void loadImage(asset.src)}
-      title={`${asset.name} — ${formatDistance(asset.defaultSize.w)} × ${formatDistance(asset.defaultSize.h)}`}
+    // The star is its own control, so it cannot live inside the tile's button.
+    <div
       className={clsx(
-        'group flex flex-col items-center gap-1 rounded-lg border p-1.5 transition',
+        'group relative flex flex-col rounded-lg border transition',
         placing
           ? 'border-emerald-500 bg-emerald-50 ring-1 ring-emerald-500'
           : 'border-transparent hover:border-stone-200 hover:bg-stone-50',
       )}
     >
-      <span className="grid aspect-square w-full place-items-center overflow-hidden rounded-md bg-stone-100/70">
-        <img
-          src={thumbFor(asset.id)}
-          alt=""
-          loading="lazy"
-          draggable={false}
-          className="h-full w-full object-contain p-1"
-        />
-      </span>
-      <span className="w-full truncate text-center text-[10px] leading-tight text-stone-600 group-hover:text-stone-900">
-        {asset.name}
-      </span>
-    </button>
+      <button
+        type="button"
+        draggable
+        onDragStart={(e) => {
+          e.dataTransfer.setData(ASSET_DRAG_TYPE, asset.id)
+          e.dataTransfer.effectAllowed = 'copy'
+        }}
+        onClick={() => setPlacing(placing ? null : asset.id)}
+        // Decode on hover so the placement preview is there the instant it is
+        // clicked. This also builds the alpha mask, which picking wants as soon
+        // as the object lands.
+        onPointerEnter={() => void loadImage(asset.src)}
+        title={`${asset.name} — ${formatDistance(asset.defaultSize.w)} × ${formatDistance(asset.defaultSize.h)}`}
+        className="flex flex-col items-center gap-1 p-1.5"
+      >
+        <span className="grid aspect-square w-full place-items-center overflow-hidden rounded-md bg-stone-100/70">
+          <img
+            src={thumbFor(asset.id)}
+            alt=""
+            loading="lazy"
+            draggable={false}
+            className="h-full w-full object-contain p-1"
+          />
+        </span>
+        <span className="w-full truncate text-center text-[10px] leading-tight text-stone-600 group-hover:text-stone-900">
+          {asset.name}
+        </span>
+      </button>
+
+      <button
+        type="button"
+        onClick={() => toggleFavourite(asset.id)}
+        title={starred ? `Remove ${asset.name} from favourites` : `Add ${asset.name} to favourites`}
+        aria-pressed={starred}
+        className={clsx(
+          'absolute right-0.5 top-0.5 rounded-md p-0.5 transition',
+          starred
+            ? 'text-amber-500 hover:text-amber-600'
+            : 'text-stone-300 opacity-0 hover:text-amber-500 focus-visible:opacity-100 group-hover:opacity-100',
+        )}
+      >
+        <StarIcon size={13} filled={starred} />
+      </button>
+    </div>
   )
 }

@@ -2,12 +2,16 @@ import type Konva from 'konva'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { Stage } from 'react-konva'
 
+import { shadowRings } from '@/core/shadows'
+import { sunPosition } from '@/core/sun'
 import { screenToWorld, visibleRect } from '@/core/viewport'
+import { profileFor } from '@/three/profiles'
 import { getAsset, useAssetStore } from '@/state/assets'
 import { makeObject, topOfBand, useDocStore } from '@/state/document'
 import { zoomToFit } from '@/state/commands'
 import { useEditorStore } from '@/state/editor'
 import { registerStage } from '@/state/persistence'
+import { noteAssetUse } from '@/state/quickAccess'
 import { isSupportedFile } from '@/assets/importAsset'
 import { snapPointToGrid } from '@/core/snapping'
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
@@ -19,6 +23,12 @@ import { OverlayLayer } from './OverlayLayer'
 import { ScaleBar } from './ScaleBar'
 import { StatusReadout } from './StatusReadout'
 import { usePlanInteraction } from './usePlanInteraction'
+
+/**
+ * Cap on shadow length. A 12 m oak with the sun 3° up casts a shadow 230 m
+ * long, which is true and useless — it covers the whole plan and says nothing.
+ */
+const MAX_SHADOW_METRES = 60
 
 export interface PlanCanvasProps {
   /** An image file dropped straight onto the plan opens the import wizard. */
@@ -40,10 +50,16 @@ export function PlanCanvas({ onFileDropped }: PlanCanvasProps) {
   const hover = useEditorStore((s) => s.hover)
   const plotDraft = useEditorStore((s) => s.plotDraft)
   const plotCursor = useEditorStore((s) => s.plotCursor)
+  const plotShape = useEditorStore((s) => s.plotShape)
+  const pathWidth = useEditorStore((s) => s.pathWidth)
   const measure = useEditorStore((s) => s.measure)
   const editingSurfaceId = useEditorStore((s) => s.editingSurfaceId)
   const tool = useEditorStore((s) => s.tool)
   const showGrid = useEditorStore((s) => s.showGrid)
+  const showSpread = useEditorStore((s) => s.showSpread)
+  const showShadows = useEditorStore((s) => s.showShadows)
+  const sunDay = useEditorStore((s) => s.sunDay)
+  const sunHour = useEditorStore((s) => s.sunHour)
   const hiddenBands = useEditorStore((s) => s.hiddenBands)
   const isolatedBand = useEditorStore((s) => s.isolatedBand)
   const setStageSize = useEditorStore((s) => s.setStageSize)
@@ -116,6 +132,7 @@ export function PlanCanvas({ onFileDropped }: PlanCanvasProps) {
           draft.objects[object.id] = object
         })
         editorState.select([{ kind: 'object', id: object.id }])
+        noteAssetUse(asset.id)
         return
       }
 
@@ -134,6 +151,23 @@ export function PlanCanvas({ onFileDropped }: PlanCanvasProps) {
 
   const placingAssetId = useEditorStore((s) => s.placingAssetId)
   const placementPoint = useEditorStore((s) => s.placementPoint)
+
+  const sun = useMemo(
+    () => sunPosition(sunDay, sunHour, doc.settings.latitude),
+    [sunDay, sunHour, doc.settings.latitude],
+  )
+
+  const shadows = useMemo(() => {
+    if (!showShadows) return []
+    return shadowRings(
+      Object.values(doc.objects),
+      // Heights live with the 3D profiles, which is the only place in the app
+      // that knows how tall anything gets. Passed in rather than imported by
+      // the shadow maths so core stays free of the 3D module.
+      (object) => profileFor(assets.get(object.assetId)).height,
+      { sun, northUp: doc.settings.northUp, maxLength: MAX_SHADOW_METRES },
+    )
+  }, [showShadows, doc.objects, doc.settings.northUp, sun, assets])
 
   const placement = useMemo(() => {
     if (!placingAssetId || !placementPoint) return null
@@ -203,6 +237,11 @@ export function PlanCanvas({ onFileDropped }: PlanCanvasProps) {
           plotDraft={plotDraft}
           plotCursor={plotCursor}
           plotActive={tool === 'plot'}
+          plotShape={plotShape}
+          pathWidth={pathWidth}
+          stampRect={interaction.stampRect}
+          showSpread={showSpread}
+          shadows={shadows}
           placement={placement}
           measure={measure}
           editingSurfaceId={editingSurfaceId}

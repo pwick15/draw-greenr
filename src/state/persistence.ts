@@ -7,8 +7,9 @@ import type { GardenDoc } from '@/core/types'
 import { DEFAULT_SETTINGS } from '@/core/types'
 
 import { preloadImages } from '@/core/imageCache'
+import { buildTakeoff, takeoffToCsv } from '@/core/schedule'
 
-import { useAssetStore } from './assets'
+import { getAssets, getMaterials, useAssetStore } from './assets'
 import { getMeta, putDoc, setMeta, getDoc } from './db'
 import { useDocStore, createEmptyDoc } from './document'
 import { useEditorStore } from './editor'
@@ -93,6 +94,21 @@ function download(filename: string, blob: Blob) {
 
 const safeFilename = (name: string) =>
   name.replace(/[^a-z0-9._-]+/gi, '-').replace(/^-+|-+$/g, '') || 'garden'
+
+/**
+ * Save the materials take-off as a spreadsheet.
+ *
+ * UTF-8 BOM first: without it Excel reads the file as the local codepage and
+ * mangles the ² in "m²" — which is in nearly every column heading here.
+ */
+export function exportTakeoffCsv(): void {
+  const { doc } = useDocStore.getState()
+  const csv = takeoffToCsv(buildTakeoff(doc, getAssets(), getMaterials()))
+  download(
+    `${safeFilename(doc.name)}-takeoff.csv`,
+    new Blob([`﻿${csv}`], { type: 'text/csv;charset=utf-8' }),
+  )
+}
 
 export function exportDocJson(): void {
   const { doc } = useDocStore.getState()

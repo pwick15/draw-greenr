@@ -1,8 +1,23 @@
 import type { KonvaEventObject } from 'konva/lib/Node'
-import { Circle, Group, Image as KonvaImage, Label, Layer, Line, Rect, Tag, Text } from 'react-konva'
+import { useMemo } from 'react'
+import {
+  Circle,
+  Ellipse,
+  Group,
+  Image as KonvaImage,
+  Label,
+  Layer,
+  Line,
+  Rect,
+  Tag,
+  Text,
+} from 'react-konva'
 
 import { dist, objectBounds, polyArea } from '@/core/geometry'
 import { useLoadedImage } from '@/core/imageCache'
+import { spreadRings, type SpreadRing } from '@/core/mature'
+import { pathLength } from '@/core/shapes'
+import type { ObjectShadow } from '@/core/shadows'
 import type { Guide } from '@/core/snapping'
 import { surfaceVertices, type VertexRef } from '@/core/surfaces'
 import {
@@ -23,13 +38,14 @@ import type {
   Vec2,
 } from '@/core/types'
 import { formatArea, formatDistance } from '@/core/viewport'
-import type { MeasureState } from '@/state/editor'
+import type { MeasureState, PlotShape } from '@/state/editor'
 
 const ACCENT = '#1f8f5f'
 const ACCENT_SOFT = 'rgba(31, 143, 95, 0.9)'
 const HOVER = 'rgba(31, 143, 95, 0.55)'
 const GUIDE = '#e0407a'
 const DRAFT = '#1f6f8f'
+const CROWDED = '#d97706'
 
 interface OverlayLayerProps {
   doc: GardenDoc
@@ -41,6 +57,11 @@ interface OverlayLayerProps {
   plotDraft: Vec2[]
   plotCursor: Vec2 | null
   plotActive: boolean
+  plotShape: PlotShape
+  pathWidth: number
+  stampRect: WorldRect | null
+  showSpread: boolean
+  shadows: ObjectShadow[]
   /** Asset queued for placement, and where it would land. */
   placement: { asset: AssetDef; point: Vec2 } | null
   measure: MeasureState | null
@@ -61,6 +82,11 @@ export function OverlayLayer({
   plotDraft,
   plotCursor,
   plotActive,
+  plotShape,
+  pathWidth,
+  stampRect,
+  showSpread,
+  shadows,
   placement,
   measure,
   editingSurfaceId,
@@ -91,8 +117,20 @@ export function OverlayLayer({
   const single = selectedObjects.length === 1 ? selectedObjects[0] : null
   const transforming = gestureKind === 'resize' || gestureKind === 'rotate' || gestureKind === 'move'
 
+  // Only recomputed when the objects themselves change: the pairwise crowding
+  // pass is cheap but not free, and this layer re-renders on every drag frame.
+  const rings = useMemo(
+    () => (showSpread ? spreadRings(Object.values(doc.objects)) : []),
+    [showSpread, doc.objects],
+  )
+
   return (
     <Layer>
+      {/* Underneath everything else — these are context for the plan, not
+          selection cues, and must not obscure what they comment on. */}
+      {shadows.length > 0 && <ShadowOverlay shadows={shadows} />}
+      {rings.length > 0 && <SpreadOverlay px={px} rings={rings} />}
+
       {/* Hover cue: never changes stacking, only draws an outline in place. */}
       {hoverObject && !selection.some((r) => r.id === hoverObject.id) && (
         <OrientedOutline object={hoverObject} stroke={HOVER} width={1.5 * px} dash={null} />
@@ -238,7 +276,13 @@ export function OverlayLayer({
         />
       )}
 
-      {plotActive && <PlotPreview px={px} draft={plotDraft} cursor={plotCursor} />}
+      {plotActive && plotShape === 'path' && (
+        <PathPreview px={px} draft={plotDraft} cursor={plotCursor} width={pathWidth} />
+      )}
+      {plotActive && plotShape === 'polygon' && (
+        <PlotPreview px={px} draft={plotDraft} cursor={plotCursor} />
+      )}
+      {stampRect && <StampPreview px={px} rect={stampRect} round={plotShape === 'ellipse'} />}
 
       {placement && <PlacementPreview px={px} asset={placement.asset} at={placement.point} />}
 
@@ -442,6 +486,205 @@ function PlotPreview({ px, draft, cursor }: PlotPreviewProps) {
           perfectDrawEnabled={false}
         />
       ))}
+    </Group>
+  )
+}
+
+/**
+ * Ground shadows at the chosen time of year.
+ *
+ * Deliberately flat and unstroked: overlapping shadows compound into darker
+ * pools, which is both what light does and the useful signal — the darkest
+ * patch on the plan is the one nothing will grow in.
+ */
+function ShadowOverlay({ shadows }: { shadows: ObjectShadow[] }) {
+  return (
+    <Group listening={false}>
+      {shadows.map((shadow) => (
+        <Line
+          key={shadow.objectId}
+          points={shadow.ring.flat()}
+          closed
+          fill="rgba(38, 54, 44, 0.17)"
+          perfectDrawEnabled={false}
+          shadowForStrokeEnabled={false}
+        />
+      ))}
+    </Group>
+  )
+}
+
+/**
+ * Mature footprints, drawn under the plan.
+ *
+ * Amber is the point of the whole overlay: it marks a plant whose grown crown
+ * would run into its neighbour's, which is invisible when everything is drawn
+ * at the size it arrives from the nursery.
+ */
+function SpreadOverlay({ px, rings }: { px: number; rings: SpreadRing[] }) {
+  return (
+    <Group listening={false}>
+      {rings.map((ring) => (
+        <Circle
+          key={ring.objectId}
+          x={ring.centre.x}
+          y={ring.centre.y}
+          radius={ring.radius}
+          fill={ring.crowded ? 'rgba(217, 119, 6, 0.11)' : 'rgba(31, 143, 95, 0.07)'}
+          stroke={ring.crowded ? CROWDED : ACCENT_SOFT}
+          strokeWidth={1.2 * px}
+          dash={[6 * px, 4 * px]}
+          perfectDrawEnabled={false}
+          shadowForStrokeEnabled={false}
+        />
+      ))}
+    </Group>
+  )
+}
+
+/**
+ * Live box for a rectangular or round stamp.
+ *
+ * Both the running dimensions and the area are on screen while dragging,
+ * because the reason to stamp a rectangle instead of drawing one is to get a
+ * patio that is actually 4 x 3 metres.
+ */
+function StampPreview({ px, rect, round }: { px: number; rect: WorldRect; round: boolean }) {
+  const area = round ? (Math.PI * rect.w * rect.h) / 4 : rect.w * rect.h
+  const fill = 'rgba(31, 111, 143, 0.18)'
+
+  return (
+    <Group listening={false}>
+      {round ? (
+        <Ellipse
+          x={rect.x + rect.w / 2}
+          y={rect.y + rect.h / 2}
+          radiusX={rect.w / 2}
+          radiusY={rect.h / 2}
+          fill={fill}
+          stroke={DRAFT}
+          strokeWidth={1.5 * px}
+          perfectDrawEnabled={false}
+        />
+      ) : (
+        <Rect
+          x={rect.x}
+          y={rect.y}
+          width={rect.w}
+          height={rect.h}
+          fill={fill}
+          stroke={DRAFT}
+          strokeWidth={1.5 * px}
+          perfectDrawEnabled={false}
+        />
+      )}
+      <ReadoutLabel
+        px={px}
+        x={rect.x + rect.w / 2}
+        y={rect.y - 11 * px}
+        text={`${formatDistance(rect.w)} × ${formatDistance(rect.h)}`}
+        subtle
+      />
+      {area > 0 && (
+        <ReadoutLabel
+          px={px}
+          x={rect.x + rect.w / 2}
+          y={rect.y + rect.h / 2}
+          text={formatArea(area)}
+        />
+      )}
+    </Group>
+  )
+}
+
+/**
+ * Live ribbon for the path tool.
+ *
+ * The preview is a Konva stroke with round caps and joins, which is precisely
+ * the shape `strokePath` builds out of quads and discs — so what is on screen
+ * while drawing is what gets committed, without running a boolean union on
+ * every pointer move.
+ */
+function PathPreview({
+  px,
+  draft,
+  cursor,
+  width,
+}: {
+  px: number
+  draft: Vec2[]
+  cursor: Vec2 | null
+  width: number
+}) {
+  const points = cursor ? [...draft, cursor] : draft
+  if (points.length === 0) return null
+
+  const flat = points.flatMap((p) => [p.x, p.y])
+  const length = pathLength(points)
+  const closable = draft.length >= 3
+  const mid = points[Math.floor(points.length / 2)]
+
+  return (
+    <Group listening={false}>
+      {points.length >= 2 && (
+        <>
+          <Line
+            points={flat}
+            stroke="rgba(31, 111, 143, 0.28)"
+            strokeWidth={width}
+            lineCap="round"
+            lineJoin="round"
+            perfectDrawEnabled={false}
+          />
+          {/* Centreline, so the run is readable even at a hairline width. */}
+          <Line
+            points={flat}
+            stroke={DRAFT}
+            strokeWidth={1 * px}
+            dash={[5 * px, 4 * px]}
+            perfectDrawEnabled={false}
+          />
+        </>
+      )}
+
+      {points.map((p, i) => {
+        const next = points[i + 1]
+        if (!next) return null
+        const segment = dist(p, next)
+        if (segment / px < 34) return null
+        return (
+          <ReadoutLabel
+            key={`seg${i}`}
+            px={px}
+            x={(p.x + next.x) / 2}
+            y={(p.y + next.y) / 2}
+            text={formatDistance(segment)}
+            subtle
+          />
+        )
+      })}
+
+      {draft.map((p, i) => (
+        <Circle
+          key={`v${i}`}
+          x={p.x}
+          y={p.y}
+          radius={(i === 0 && closable ? 6 : 4) * px}
+          fill={i === 0 && closable ? '#ffffff' : DRAFT}
+          stroke={DRAFT}
+          strokeWidth={1.5 * px}
+          perfectDrawEnabled={false}
+        />
+      ))}
+
+      {length > 0 && (
+        <ReadoutLabel
+          px={px}
+          x={mid.x}
+          y={mid.y - 14 * px}
+          text={`${formatDistance(length)} · ${formatArea(length * width)}`}
+        />
+      )}
     </Group>
   )
 }

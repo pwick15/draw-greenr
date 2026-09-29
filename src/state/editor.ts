@@ -3,14 +3,37 @@ import { create } from 'zustand'
 import type { PickCycleState } from '@/core/picking'
 import type { BandId, SelectionRef, Vec2, Viewport } from '@/core/types'
 import type { PaintMode } from '@/core/surfaces'
+import { EQUINOX_SPRING } from '@/core/sun'
 import { DEFAULT_SCALE } from '@/core/viewport'
 
 export type ToolId = 'select' | 'pan' | 'plot' | 'measure'
+
+/**
+ * How the plot tool gathers its outline.
+ *
+ * `polygon` is the click-a-corner-at-a-time original. The rest exist because
+ * most ground in a real garden is a rectangle of paving or a round bed, and
+ * clicking four corners to get a rectangle is busywork the tool should absorb.
+ */
+export type PlotShape = 'polygon' | 'rect' | 'ellipse' | 'path'
 
 export interface MeasureState {
   from: Vec2
   to: Vec2
   done: boolean
+}
+
+/**
+ * The offset a duplicate should repeat, and the objects it belongs to.
+ *
+ * Tying the offset to specific ids is what makes "repeat" stop at the right
+ * moment: duplicating advances the ids to the new copies, so a run of ⌘D keeps
+ * stepping, but selecting anything else no longer matches and the next
+ * duplicate falls back to its default placement.
+ */
+export interface RepeatOffset {
+  ids: string[]
+  delta: Vec2
 }
 
 interface EditorState {
@@ -37,8 +60,14 @@ interface EditorState {
    */
   placementPoint: Vec2 | null
 
+  /** Offset for the next repeat-duplicate, or null to use the default. */
+  repeatOffset: RepeatOffset | null
+
   plotMaterialId: string
   plotMode: PaintMode
+  plotShape: PlotShape
+  /** Width of a stroked path, in metres. */
+  pathWidth: number
   /** Vertices committed so far in the current plot outline. */
   plotDraft: Vec2[]
   /** Live cursor position, drawn as the provisional next vertex. */
@@ -60,6 +89,13 @@ interface EditorState {
   angleSnap: boolean
 
   showGrid: boolean
+  /** Draw every plant at its mature spread, flagging the ones that collide. */
+  showSpread: boolean
+  /** Cast ground shadows from object heights at the chosen time of year. */
+  showShadows: boolean
+  /** Day of year and solar hour the shadow study is set to. */
+  sunDay: number
+  sunHour: number
   showLayers: boolean
   showInspector: boolean
   /** Sidebar visibility, so the plan can take the whole window. */
@@ -79,9 +115,13 @@ interface EditorState {
 
   setPlacing: (assetId: string | null) => void
   setPlacementPoint: (point: Vec2 | null) => void
+  setRepeatOffset: (offset: RepeatOffset | null) => void
 
   setPlotMaterial: (id: string) => void
   setPlotMode: (mode: PaintMode) => void
+  setPlotShape: (shape: PlotShape) => void
+  setPathWidth: (metres: number) => void
+  setSun: (patch: { day?: number; hour?: number }) => void
   addPlotPoint: (point: Vec2) => void
   setPlotCursor: (point: Vec2 | null) => void
   popPlotPoint: () => void
@@ -100,6 +140,8 @@ interface EditorState {
       | 'snapToGeometry'
       | 'angleSnap'
       | 'showGrid'
+      | 'showSpread'
+      | 'showShadows'
       | 'showLayers'
       | 'showInspector'
       | 'showLeftPanel'
@@ -124,9 +166,12 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
 
   placingAssetId: null,
   placementPoint: null,
+  repeatOffset: null,
 
   plotMaterialId: 'lawn',
   plotMode: 'add',
+  plotShape: 'polygon',
+  pathWidth: 1,
   plotDraft: [],
   plotCursor: null,
 
@@ -142,6 +187,12 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
   angleSnap: false,
 
   showGrid: true,
+  showSpread: false,
+  showShadows: false,
+  // Opens on the spring equinox at mid-morning: the equinox is the honest
+  // middle of the year, and mid-morning is when overshadowing actually bites.
+  sunDay: EQUINOX_SPRING,
+  sunHour: 10,
   showLayers: true,
   showInspector: true,
   showLeftPanel: true,
@@ -213,12 +264,32 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
     set({ placementPoint: point })
   },
 
+  setRepeatOffset(offset) {
+    set({ repeatOffset: offset })
+  },
+
   setPlotMaterial(id) {
     set({ plotMaterialId: id, tool: 'plot' })
   },
 
   setPlotMode(mode) {
     set({ plotMode: mode })
+  },
+
+  setPlotShape(shape) {
+    // A half-drawn outline means nothing once the shape changes under it.
+    set({ plotShape: shape, plotDraft: [], plotCursor: null, tool: 'plot' })
+  },
+
+  setPathWidth(metres) {
+    set({ pathWidth: Math.max(0.05, Math.min(20, metres)) })
+  },
+
+  setSun({ day, hour }) {
+    set({
+      sunDay: day === undefined ? get().sunDay : Math.max(1, Math.min(365, Math.round(day))),
+      sunHour: hour === undefined ? get().sunHour : Math.max(0, Math.min(24, hour)),
+    })
   },
 
   addPlotPoint(point) {

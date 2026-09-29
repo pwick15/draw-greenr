@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { dist, objectBounds, rectFromPoints } from '@/core/geometry'
 import { pickInRect, resolvePick, type PickOptions } from '@/core/picking'
+import { dragRect, ellipseRing, rectRing, strokePath } from '@/core/shapes'
 import { constrainAngle, snapPointToGrid, snapPlotPoint, snapRectToRects, type Guide } from '@/core/snapping'
 import { eraseFromAll, moveVertex, paintSurface, pointsToRing, type VertexRef } from '@/core/surfaces'
 import {
@@ -18,8 +19,10 @@ import {
 import type { GardenObject, MultiPoly, Rect, SelectionRef, Vec2 } from '@/core/types'
 import { screenToWorld, zoomAt } from '@/core/viewport'
 import { getAsset, getAssets, getMaterials, useAssetStore } from '@/state/assets'
+import { duplicateObjectsInPlace } from '@/state/commands'
 import { makeObject, topOfBand, useDocStore } from '@/state/document'
-import { bandIsInteractive, useEditorStore } from '@/state/editor'
+import { noteAssetUse } from '@/state/quickAccess'
+import { bandIsInteractive, useEditorStore, type PlotShape } from '@/state/editor'
 
 /** Click slop and snap radius, in screen pixels. */
 const PICK_TOLERANCE_PX = 3
@@ -27,6 +30,9 @@ const SNAP_TOLERANCE_PX = 8
 const DRAG_THRESHOLD_PX = 3
 /** Shortest plot edge worth creating, in screen pixels. */
 const MIN_VERTEX_SPACING_PX = 6
+
+/** Shapes drawn by dragging a box rather than clicking corner by corner. */
+const isStampShape = (shape: PlotShape): boolean => shape === 'rect' || shape === 'ellipse'
 /** How far a double-click's second click may stray and still mean "finish". */
 const DOUBLE_CLICK_SLOP_PX = 6
 
@@ -34,16 +40,27 @@ export type Gesture =
   | { kind: 'none' }
   | { kind: 'pan'; lastScreen: Vec2 }
   | { kind: 'marquee'; start: Vec2; current: Vec2; additive: boolean }
-  | { kind: 'move'; startWorld: Vec2; startObjects: GardenObject[]; moved: boolean }
+  | {
+      kind: 'move'
+      startWorld: Vec2
+      startObjects: GardenObject[]
+      moved: boolean
+      /** ⌘ was held on pointerdown: drag a copy and leave the original. */
+      duplicate: boolean
+    }
   | { kind: 'resize'; handle: HandleId; startObjects: GardenObject[]; startBox: Rect | null }
   | { kind: 'rotate'; pivot: Vec2; startAngle: number; startObjects: GardenObject[] }
   | { kind: 'vertex'; surfaceId: string; ref: VertexRef; startGeometry: MultiPoly }
   | { kind: 'measure'; from: Vec2 }
+  /** Dragging out a rectangular or round stamp of ground material. */
+  | { kind: 'stamp'; start: Vec2; rect: Rect }
 
 export interface InteractionApi {
   gestureKind: Gesture['kind']
   guides: Guide[]
   marquee: Rect | null
+  /** Live bounds of a stamp being dragged out, for the preview. */
+  stampRect: Rect | null
   cursor: string
   beginResize: (handle: HandleId, event: KonvaEventObject<PointerEvent>) => void
   beginRotate: (event: KonvaEventObject<PointerEvent>) => void
@@ -62,10 +79,14 @@ export function usePlanInteraction(stageRef: React.RefObject<Konva.Stage | null>
   const [gestureKind, setGestureKind] = useState<Gesture['kind']>('none')
   const [guides, setGuides] = useState<Guide[]>([])
   const [marquee, setMarquee] = useState<Rect | null>(null)
+  const [stampRect, setStampRect] = useState<Rect | null>(null)
   // Held in both a ref and state: the ref is what pointerdown reads mid-gesture,
   // the state is what the cursor renders from.
   const spaceDown = useRef(false)
   const [spaceHeld, setSpaceHeld] = useState(false)
+  // Drives the copy cursor. Read off pointermove rather than a key listener so
+  // that ⌘Z and friends elsewhere in the app do not flicker the canvas.
+  const [copyArmed, setCopyArmed] = useState(false)
 
   const setGesture = useCallback((next: Gesture) => {
     gesture.current = next
@@ -143,17 +164,23 @@ export function usePlanInteraction(stageRef: React.RefObject<Konva.Stage | null>
       draft.objects[object.id] = object
     })
     editor.select([{ kind: 'object', id: object.id }])
+    noteAssetUse(asset.id)
     if (!keepPlacing) editor.setPlacing(null)
   }, [])
 
   // --- plot ----------------------------------------------------------------
 
-  const commitPlot = useCallback(() => {
-    const editor = useEditorStore.getState()
-    const { plotDraft, plotMaterialId, plotMode } = editor
-    if (plotDraft.length < 3) return
+  /**
+   * Hand a finished outline to the surface stack.
+   *
+   * Every shape the plot tool can produce — polygon, stamp, stroked path —
+   * arrives here as a plain MultiPolygon, so add/erase/replace and the
+   * occlusion rules stay in exactly one place.
+   */
+  const applyPolygon = useCallback((polygon: MultiPoly, what: string) => {
+    if (polygon.length === 0) return
+    const { plotMaterialId, plotMode } = useEditorStore.getState()
     const { apply, doc } = useDocStore.getState()
-    const polygon: MultiPoly = [[pointsToRing(plotDraft)]]
 
     // Run the boolean ops on plain state *before* opening the immer recipe:
     // handing polyclip a draft would make it walk proxies for every vertex.
@@ -162,11 +189,52 @@ export function usePlanInteraction(stageRef: React.RefObject<Konva.Stage | null>
         ? eraseFromAll(doc.surfaces, polygon)
         : paintSurface(doc.surfaces, getMaterials(), plotMaterialId, polygon, plotMode).surfaces
 
-    apply(plotMode === 'subtract' ? 'Erase surface' : 'Draw surface', (draft) => {
+    apply(plotMode === 'subtract' ? `Erase ${what}` : `Draw ${what}`, (draft) => {
       draft.surfaces = surfaces
     })
-    editor.clearPlot()
   }, [])
+
+  const finishPlot = useCallback(
+    (closed: boolean) => {
+      const editor = useEditorStore.getState()
+      const { plotDraft, plotShape, pathWidth } = editor
+
+      if (plotShape === 'path') {
+        // Two points is a straight run of path, which is a perfectly ordinary
+        // thing to want; a polygon needs three to enclose anything.
+        if (plotDraft.length < 2) return
+        applyPolygon(strokePath(plotDraft, pathWidth, { roundEnds: true, closed }), 'path')
+      } else {
+        if (plotDraft.length < 3) return
+        applyPolygon([[pointsToRing(plotDraft)]], 'surface')
+      }
+      editor.clearPlot()
+    },
+    [applyPolygon],
+  )
+
+  const commitPlot = useCallback(() => finishPlot(false), [finishPlot])
+
+  /** Rect a stamp drag currently describes, grid snapping included. */
+  const stampRectFor = useCallback((start: Vec2, current: Vec2, native: PointerEvent): Rect => {
+    const { snapToGrid } = useEditorStore.getState()
+    const grid = useDocStore.getState().doc.settings.gridSize
+    const end = snapToGrid ? snapPointToGrid(current, grid) : current
+    return dragRect(start, end, { square: native.shiftKey, fromCentre: native.altKey })
+  }, [])
+
+  const commitStamp = useCallback(
+    (rect: Rect) => {
+      // A press with no real drag is a mis-click, not a request for a
+      // two-centimetre patch of gravel.
+      const minimum = DRAG_THRESHOLD_PX * worldPerPixel()
+      if (rect.w < minimum || rect.h < minimum) return
+      const { plotShape } = useEditorStore.getState()
+      const ring = plotShape === 'ellipse' ? ellipseRing(rect) : rectRing(rect)
+      applyPolygon([[ring]], plotShape === 'ellipse' ? 'round area' : 'area')
+    },
+    [applyPolygon],
+  )
 
   const cancelPlot = useCallback(() => {
     useEditorStore.getState().clearPlot()
@@ -195,7 +263,9 @@ export function usePlanInteraction(stageRef: React.RefObject<Konva.Stage | null>
       const editor = useEditorStore.getState()
       const snapped = snapPlotPoint(raw, plotSnapContext(angleLock))
       if (snapped.closing) {
-        commitPlot()
+        // Back on the first vertex: a polygon closes, and a path becomes a
+        // loop — which is how you get a border running round an island bed.
+        finishPlot(true)
         return
       }
       // Drops the second half of a double-click and any hand stutter, which
@@ -203,7 +273,7 @@ export function usePlanInteraction(stageRef: React.RefObject<Konva.Stage | null>
       if (snapped.degenerate) return
       editor.addPlotPoint(snapped.point)
     },
-    [commitPlot, plotSnapContext],
+    [finishPlot, plotSnapContext],
   )
 
   // --- gesture starts ------------------------------------------------------
@@ -281,6 +351,14 @@ export function usePlanInteraction(stageRef: React.RefObject<Konva.Stage | null>
       }
 
       if (editor.tool === 'plot') {
+        if (isStampShape(editor.plotShape)) {
+          const grid = useDocStore.getState().doc.settings.gridSize
+          const start = editor.snapToGrid ? snapPointToGrid(world, grid) : world
+          const empty = { x: start.x, y: start.y, w: 0, h: 0 }
+          setGesture({ kind: 'stamp', start, rect: empty })
+          setStampRect(empty)
+          return
+        }
         addPlotVertex(world, native.shiftKey)
         return
       }
@@ -293,7 +371,12 @@ export function usePlanInteraction(stageRef: React.RefObject<Konva.Stage | null>
 
       // --- select ---
       const { doc } = useDocStore.getState()
-      const additive = native.shiftKey || native.metaKey || native.ctrlKey
+      // ⌘/Ctrl means "drag a copy", so it can no longer double as an additive
+      // modifier. Shift alone is the convention everywhere else anyway, and it
+      // still works here — except alongside ⌘, where duplication wins so that
+      // ⌘⇧-drag can duplicate along a locked axis.
+      const mod = native.metaKey || native.ctrlKey
+      const additive = native.shiftKey && !mod
       const result = resolvePick(doc, getAssets(), world, editor.pickCycle, pickOptions(), native.altKey)
 
       if (!result.ref) {
@@ -321,12 +404,13 @@ export function usePlanInteraction(stageRef: React.RefObject<Konva.Stage | null>
 
       const objects = selectedObjects()
       if (objects.length === 0) return
-      useDocStore.getState().begin('Move')
+      useDocStore.getState().begin(mod ? 'Duplicate' : 'Move')
       setGesture({
         kind: 'move',
         startWorld: world,
         startObjects: objects.map((o) => ({ ...o })),
         moved: false,
+        duplicate: mod,
       })
     },
     [addPlotVertex, pickOptions, placeAsset, pointerWorld, selectedObjects, setGesture, stageRef],
@@ -344,6 +428,9 @@ export function usePlanInteraction(stageRef: React.RefObject<Konva.Stage | null>
       switch (current.kind) {
         case 'none': {
           if (editor.tool === 'plot') {
+            // A stamp has no provisional vertex to show — it only exists once
+            // a drag is underway.
+            if (isStampShape(editor.plotShape)) return
             editor.setPlotCursor(snapPlotPoint(world, plotSnapContext(native.shiftKey)).point)
             return
           }
@@ -360,6 +447,9 @@ export function usePlanInteraction(stageRef: React.RefObject<Konva.Stage | null>
             const { doc } = useDocStore.getState()
             const hit = resolvePick(doc, getAssets(), world, null, pickOptions(), false)
             editor.setHover(hit.ref)
+            // Identical values make this a no-op in React, so the common case
+            // costs nothing and only the transition re-renders.
+            setCopyArmed((native.metaKey || native.ctrlKey) && editor.selection.length > 0)
           }
           return
         }
@@ -385,7 +475,16 @@ export function usePlanInteraction(stageRef: React.RefObject<Konva.Stage | null>
           const movedFar =
             Math.hypot(raw.x, raw.y) * useEditorStore.getState().viewport.scale > DRAG_THRESHOLD_PX
           if (!movedFar && !current.moved) return
-          gesture.current = { ...current, moved: true }
+
+          // Duplication waits for real movement. Doing it on pointerdown would
+          // mean a ⌘-click that never drags silently leaves a second copy
+          // stacked exactly on the first, where nothing reveals it.
+          let startObjects = current.startObjects
+          if (current.duplicate && !current.moved) {
+            const copies = duplicateObjectsInPlace(startObjects)
+            if (copies.length) startObjects = copies
+          }
+          gesture.current = { ...current, moved: true, startObjects }
 
           let delta = raw
           // Shift locks to the dominant axis, as in every other editor.
@@ -398,7 +497,7 @@ export function usePlanInteraction(stageRef: React.RefObject<Konva.Stage | null>
           let nextGuides: Guide[] = []
 
           if (editor.snapToGrid) {
-            const first = current.startObjects[0]
+            const first = startObjects[0]
             if (first) {
               const target = snapPointToGrid(
                 { x: first.x + delta.x, y: first.y + delta.y },
@@ -407,8 +506,8 @@ export function usePlanInteraction(stageRef: React.RefObject<Konva.Stage | null>
               delta = { x: target.x - first.x, y: target.y - first.y }
             }
           } else if (editor.snapToGeometry) {
-            const movingIds = new Set(current.startObjects.map((o) => o.id))
-            const movingBox = boundsOfMoved(current.startObjects, delta)
+            const movingIds = new Set(startObjects.map((o) => o.id))
+            const movingBox = boundsOfMoved(startObjects, delta)
             if (movingBox) {
               const statics: Rect[] = []
               for (const o of Object.values(doc.objects)) {
@@ -422,7 +521,7 @@ export function usePlanInteraction(stageRef: React.RefObject<Konva.Stage | null>
           }
 
           useDocStore.getState().update((draft) => {
-            for (const start of current.startObjects) {
+            for (const start of startObjects) {
               const target = draft.objects[start.id]
               if (!target) continue
               target.x = start.x + delta.x
@@ -509,11 +608,18 @@ export function usePlanInteraction(stageRef: React.RefObject<Konva.Stage | null>
           return
         }
 
+        case 'stamp': {
+          const rect = stampRectFor(current.start, world, native)
+          gesture.current = { ...current, rect }
+          setStampRect(rect)
+          return
+        }
+
         default:
           return
       }
     },
-    [pickOptions, plotSnapContext, pointerWorld, stageRef],
+    [pickOptions, plotSnapContext, pointerWorld, stampRectFor, stageRef],
   )
 
   const onPointerUp = useCallback(() => {
@@ -537,7 +643,27 @@ export function usePlanInteraction(stageRef: React.RefObject<Konva.Stage | null>
         setMarquee(null)
         break
       }
-      case 'move':
+      case 'move': {
+        // Remember what a ⌘-drag actually travelled — snapping included — so
+        // that ⌘D repeats the step the user saw rather than the one they aimed
+        // for. A plain move leaves the offset alone: repeating it would be a
+        // surprise, since nothing was duplicated.
+        if (current.duplicate && current.moved) {
+          const first = current.startObjects[0]
+          const landed = first ? doc.doc.objects[first.id] : undefined
+          if (first && landed) {
+            editor.setRepeatOffset({
+              ids: current.startObjects.map((o) => o.id),
+              delta: { x: landed.x - first.x, y: landed.y - first.y },
+            })
+          }
+        } else if (current.moved) {
+          editor.setRepeatOffset(null)
+        }
+        doc.end()
+        setGuides([])
+        break
+      }
       case 'resize':
       case 'rotate':
       case 'vertex':
@@ -547,11 +673,15 @@ export function usePlanInteraction(stageRef: React.RefObject<Konva.Stage | null>
       case 'measure':
         if (editor.measure) editor.setMeasure({ ...editor.measure, done: true })
         break
+      case 'stamp':
+        commitStamp(current.rect)
+        setStampRect(null)
+        break
       default:
         break
     }
     setGesture({ kind: 'none' })
-  }, [setGesture])
+  }, [commitStamp, setGesture])
 
   const onWheel = useCallback(
     (event: KonvaEventObject<WheelEvent>) => {
@@ -607,12 +737,13 @@ export function usePlanInteraction(stageRef: React.RefObject<Konva.Stage | null>
     if (!ready) void useAssetStore.getState().load()
   }, [ready])
 
-  const cursor = cursorFor(gestureKind, spaceHeld)
+  const cursor = cursorFor(gestureKind, spaceHeld, copyArmed)
 
   return {
     gestureKind,
     guides,
     marquee,
+    stampRect,
     cursor,
     beginResize,
     beginRotate,
@@ -648,11 +779,12 @@ function dedupe(refs: SelectionRef[]): SelectionRef[] {
   })
 }
 
-function cursorFor(kind: Gesture['kind'], space: boolean): string {
+function cursorFor(kind: Gesture['kind'], space: boolean, copy: boolean): string {
   if (kind === 'pan') return 'grabbing'
   if (space) return 'grab'
   if (kind === 'move') return 'grabbing'
-  if (kind === 'marquee') return 'crosshair'
+  if (kind === 'marquee' || kind === 'stamp') return 'crosshair'
+  if (copy) return 'copy'
   return 'default'
 }
 

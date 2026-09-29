@@ -170,6 +170,12 @@ export function useKeyboardShortcuts(onCommitPlot: () => void, onCancelPlot: () 
         case "'":
           editor.toggle('showGrid')
           break
+        case 'w':
+          editor.toggle('showSpread')
+          break
+        case 'u':
+          editor.toggle('showShadows')
+          break
         case 'f':
           if (editor.selection.length) zoomToSelection()
           else zoomToFit()

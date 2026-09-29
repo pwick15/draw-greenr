@@ -33,6 +33,21 @@ function safeOp(op: () => MultiPoly, fallback: MultiPoly): MultiPoly {
 export const unionMulti = (a: MultiPoly, b: MultiPoly): MultiPoly =>
   a.length === 0 ? cleanup(b) : b.length === 0 ? cleanup(a) : safeOp(() => polyclip.union(a, b), a)
 
+/**
+ * Union many pieces in a single sweep.
+ *
+ * polyclip takes any number of operands, and one sweep over all of them is far
+ * cheaper than folding pairwise — which matters for a stroked path, where a
+ * long run is dozens of quads and discs that would otherwise be dozens of
+ * separate boolean ops.
+ */
+export function unionAll(parts: readonly MultiPoly[]): MultiPoly {
+  const solid = parts.filter((p) => p.length > 0)
+  if (solid.length === 0) return []
+  if (solid.length === 1) return cleanup(solid[0])
+  return safeOp(() => polyclip.union(solid[0], ...solid.slice(1)), solid[0])
+}
+
 export const differenceMulti = (a: MultiPoly, b: MultiPoly): MultiPoly =>
   a.length === 0 || b.length === 0 ? cleanup(a) : safeOp(() => polyclip.difference(a, b), a)
 
